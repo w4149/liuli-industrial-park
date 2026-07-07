@@ -40,6 +40,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick }) => {
   const mapRef = useRef<any>(null)
   const initializedRef = useRef(false)
   const [mapLoaded, setMapLoaded] = useState(false)
+  const [isLocating, setIsLocating] = useState(false)
+  const [locationStatus, setLocationStatus] = useState<string>('idle')
 
   useEffect(() => {
     const container = mapContainerRef.current
@@ -115,6 +117,41 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick }) => {
     }
   }, [pois, onPOIClick])
 
+  const handleLocate = () => {
+    const map = mapRef.current
+    if (!map || typeof AMap === 'undefined') return
+
+    setIsLocating(true)
+    setLocationStatus('locating')
+
+    AMap.plugin('AMap.Geolocation', () => {
+      const geolocation = new AMap.Geolocation({
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+        convert: true,
+      })
+
+      geolocation.getCurrentPosition((status: string, result: any) => {
+        setIsLocating(false)
+        if (status === 'complete' && result.position) {
+          setLocationStatus('success')
+          map.setCenter([result.position.lng, result.position.lat])
+          map.setZoom(18)
+
+          const userMarker = new AMap.Marker({
+            position: [result.position.lng, result.position.lat],
+            title: '我的位置',
+          })
+          userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
+          map.add(userMarker)
+        } else {
+          setLocationStatus('failed')
+        }
+      })
+    })
+  }
+
   return (
     <MapErrorBoundary>
       <div
@@ -125,6 +162,33 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick }) => {
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '10px 20px', borderRadius: '20px', zIndex: 100 }}>
             🗺️ 加载地图中...
           </div>
+        )}
+
+        {isLocating && (
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '10px 20px', borderRadius: '20px', zIndex: 100 }}>
+            📍 定位中...
+          </div>
+        )}
+
+        {locationStatus === 'failed' && !isLocating && (
+          <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '10px 20px', borderRadius: '20px', zIndex: 100, textAlign: 'center', fontSize: '14px' }}>
+            <div>⚠️ 定位失败，请重试</div>
+            <button
+              onClick={handleLocate}
+              style={{ marginTop: '10px', background: '#667eea', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '15px', fontSize: '14px', cursor: 'pointer' }}
+            >
+              重试定位
+            </button>
+          </div>
+        )}
+
+        {mapLoaded && locationStatus === 'idle' && (
+          <button
+            onClick={handleLocate}
+            style={{ position: 'absolute', bottom: '20px', right: '20px', background: '#667eea', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '20px', fontSize: '14px', cursor: 'pointer', zIndex: 100, boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
+          >
+            📍 定位
+          </button>
         )}
       </div>
     </MapErrorBoundary>
