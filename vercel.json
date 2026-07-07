@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build:h5",
+  "outputDirectory": "dist",
+  "framework": null,
+  "installCommand": "npm install",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}

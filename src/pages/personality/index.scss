@@ -1,0 +1,115 @@
+.personality-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  max-width: 414PX;
+  margin: 0 auto;
+}
+
+.header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40px 20px 20px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: white;
+}
+
+.test-container {
+  padding: 20px;
+}
+
+.result-container {
+  padding: 20px;
+}
+
+.result-card {
+  background: white;
+  border-radius: 16px;
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.beast-icon-large {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.beast-icon-large span {
+  font-size: 64px;
+  color: white;
+}
+
+.result-title {
+  font-size: 16px;
+  color: #666;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.beast-type {
+  font-size: 32px;
+  font-weight: 600;
+  color: #333;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.traits-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.trait-tag {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+.result-desc {
+  font-size: 15px;
+  color: #666;
+  line-height: 1.6;
+  display: block;
+  margin-bottom: 24px;
+}
+
+.share-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.retry-btn {
+  width: 100%;
+  background: #f0f0f0;
+  color: #666;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.share-btn:active,
+.retry-btn:active {
+  opacity: 0.8;
+}

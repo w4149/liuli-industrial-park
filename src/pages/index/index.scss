@@ -1,0 +1,307 @@
+.index-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  padding-bottom: 80rpx;
+  max-width: 414PX;
+  margin: 0 auto;
+}
+
+.header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40px 20px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: white;
+}
+
+.inspiration-badge {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-icon {
+  font-size: 18px;
+}
+
+.badge-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+}
+
+.map-section {
+  padding: 20px;
+  margin-top: -20px;
+}
+
+.map-section canvas {
+  width: 100%;
+  height: auto;
+  max-height: 350px;
+  border-radius: 16px;
+}
+
+.content-section {
+  padding: 0 20px;
+}
+
+.welcome-card {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  text-align: center;
+}
+
+.welcome-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #333;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.welcome-text {
+  font-size: 14px;
+  color: #666;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #667eea;
+  display: block;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #999;
+  display: block;
+}
+
+.tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  padding: 12px 0;
+  z-index: 100;
+}
+
+.tab-item {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tab-icon {
+  font-size: 24px;
+}
+
+.tab-label {
+  font-size: 12px;
+  color: #999;
+}
+
+.tab-item.active .tab-label {
+  color: #667eea;
+}
+
+.poi-card {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.poi-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 12px 0;
+}
+
+.poi-description {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 16px 0;
+}
+
+.poi-type {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 16px;
+}
+
+.poi-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.poi-btn {
+  flex: 1;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.inspiration-board {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.board-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 16px 0;
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message-card {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.message-content {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.message-meta {
+  display: flex;
+  gap: 12px;
+}
+
+.action-btn {
+  background: transparent;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #666;
+}
+
+.quiz-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.quiz-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 16px 0;
+}
+
+.quiz-question {
+  font-size: 16px;
+  color: #333;
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.option-btn {
+  background: #f8f9fa;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 16px;
+  color: #333;
+  text-align: left;
+}
+
+.option-btn.selected {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.submit-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.quiz-result {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.quiz-result.correct {
+  background: #d4edda;
+  color: #155724;
+}
+
+.quiz-result.wrong {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.loading-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: #f5f5f5;
+}
+
+.loading-text {
+  font-size: 18px;
+  color: #667eea;
+}

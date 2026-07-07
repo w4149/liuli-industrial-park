@@ -1,0 +1,149 @@
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 360px;
+  padding: 20px;
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+}
+
+.quiz-question {
+  margin-bottom: 20px;
+}
+
+.quiz-question p {
+  font-size: 16px;
+  color: #333;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.option-item {
+  padding: 14px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #333;
+  background: white;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.option-item.selected {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.option-item.correct {
+  border-color: #43e97b;
+  background: #f0fff0;
+}
+
+.option-item.wrong {
+  border-color: #ff6b6b;
+  background: #fff0f0;
+}
+
+.option-item:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.option-item:disabled {
+  cursor: not-allowed;
+}
+
+.submit-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.submit-btn:active {
+  opacity: 0.8;
+}
+
+.submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.result-message {
+  text-align: center;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.result-message.success {
+  background: #f0fff0;
+}
+
+.result-message.error {
+  background: #fff0f0;
+}
+
+.emoji {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.result-message p {
+  font-size: 16px;
+  margin: 0;
+}
+
+.result-message.success p {
+  color: #43e97b;
+}
+
+.result-message.error p {
+  color: #ff6b6b;
+}

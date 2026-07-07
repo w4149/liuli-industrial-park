@@ -1,0 +1,47 @@
+{
+  "name": "liuli-park",
+  "version": "1.0.0",
+  "description": "琉璃文创园区互动小程序",
+  "scripts": {
+    "dev:weapp": "npx @tarojs/cli build --type weapp --watch",
+    "build:weapp": "npx @tarojs/cli build --type weapp",
+    "dev:h5": "npx @tarojs/cli build --type h5 --watch",
+    "build:h5": "npx @tarojs/cli build --type h5"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0",
+    "@tarojs/components": "^3.6.33",
+    "@tarojs/react": "^3.6.33",
+    "@tarojs/runtime": "^3.6.33",
+    "@tarojs/taro": "^3.6.33",
+    "core-js": "^3.49.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "webpack": "^4.47.0",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.7",
+    "@babel/plugin-transform-runtime": "^7.24.7",
+    "@babel/polyfill": "^7.12.1",
+    "@babel/preset-env": "^7.24.7",
+    "@babel/preset-react": "^7.24.7",
+    "@babel/preset-typescript": "^7.24.7",
+    "@babel/runtime": "^7.24.7",
+    "@eslint/eslintrc": "^3.3.5",
+    "@pmmmwh/react-refresh-webpack-plugin": "^0.5.10",
+    "@tarojs/cli": "^3.6.33",
+    "@tarojs/mini-runner": "^3.6.33",
+    "@tarojs/plugin-framework-react": "^3.6.33",
+    "@tarojs/plugin-platform-h5": "^3.6.33",
+    "@tarojs/plugin-platform-weapp": "^3.6.33",
+    "@tarojs/webpack-runner": "^3.6.33",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "react-refresh": "^0.18.0",
+    "sass": "^1.60.0",
+    "typescript": "^5.0.0",
+    "webpack-bundle-analyzer": "^5.3.0"
+  }
+}

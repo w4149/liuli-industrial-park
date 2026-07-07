@@ -1,0 +1,96 @@
+.poi-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.poi-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.poi-type {
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.poi-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.poi-description {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.6;
+  margin: 0 0 16px 0;
+}
+
+.poi-interactions {
+  margin-bottom: 16px;
+}
+
+.poi-interactions h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 12px 0;
+}
+
+.interaction-item {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.interaction-type {
+  display: inline-block;
+  font-size: 12px;
+  color: #667eea;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.interaction-item p {
+  font-size: 14px;
+  color: #333;
+  margin: 0;
+}
+
+.reward {
+  display: inline-block;
+  font-size: 12px;
+  color: #43e97b;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.poi-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-primary {
+  flex: 1;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.btn-primary:active {
+  opacity: 0.8;
+}

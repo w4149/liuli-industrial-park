@@ -1,0 +1,34 @@
+﻿# Dependencies
+node_modules/
+.venv/
+
+# Build output
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Trae
+.trae/
+
+# SWC cache
+.swc/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# npm
+package-lock.json
