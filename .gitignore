@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 .venv/
 
@@ -10,6 +10,9 @@ build/
 .env
 .env.local
 .env.*.local
+
+# Environment variable example (should be committed)
+!.env.example
 
 # IDE
 .vscode/

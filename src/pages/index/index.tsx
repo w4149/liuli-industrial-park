@@ -3,12 +3,15 @@ import Taro from '@tarojs/taro'
 import { View, Text, Button } from '@tarojs/components'
 import MapCanvas from '@/components/MapCanvas'
 import { mockPOIs } from '@/data/mockPois'
+import { mapConfig } from '@/config/map'
 import { POI } from '@/types'
 import './index.scss'
 
 const Index: React.FC = () => {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [useCustomMap, setUseCustomMap] = useState(false)
+  const customMapUrl = require('@/assets/images/park-map.png')
 
   useEffect(() => {
     const mockLogin = async () => {
@@ -82,7 +85,17 @@ const Index: React.FC = () => {
           <MapCanvas
             pois={mockPOIs}
             onPOIClick={handlePOIClick}
+            customMapUrl={useCustomMap && customMapUrl ? customMapUrl : undefined}
+            customMapBounds={useCustomMap ? mapConfig.customMapBounds : undefined}
           />
+        </View>
+        <View className="map-toggle">
+          <button
+            className={`toggle-btn ${useCustomMap ? 'active' : ''}`}
+            onClick={() => setUseCustomMap(!useCustomMap)}
+          >
+            {useCustomMap ? '🖼️ 手绘地图' : '🗺️ 标准地图'}
+          </button>
         </View>
       </View>
 

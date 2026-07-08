@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro'
 import { View, Text, Image } from '@tarojs/components'
 import BadgeDisplay from '@/components/BadgeDisplay'
 import RidgeBeastTest from '@/components/RidgeBeastTest'
+import DeveloperMode from '@/components/DeveloperMode'
 import { Badge, RidgeBeastPersonality, SpatialProfile } from '@/types'
 import { formatTime } from '@/utils'
 import { useUserStore } from '@/store/useUserStore'
@@ -40,6 +41,7 @@ const Profile: React.FC = () => {
   const [spatialProfile, setSpatialProfile] = useState<SpatialProfile>(mockSpatialProfile)
   const [personality, setPersonality] = useState<RidgeBeastPersonality | null>(mockPersonality)
   const [showTest, setShowTest] = useState(false)
+  const [showDeveloperMode, setShowDeveloperMode] = useState(false)
 
   useEffect(() => {
     const loadBadges = async () => {
@@ -169,8 +171,16 @@ const Profile: React.FC = () => {
               <span className="action-icon">📝</span>
               <span className="action-label">隐私设置</span>
             </button>
+            <button className="action-item" onClick={() => setShowDeveloperMode(true)}>
+              <span className="action-icon">🔧</span>
+              <span className="action-label">开发者模式</span>
+            </button>
           </View>
         </>
+      )}
+
+      {showDeveloperMode && (
+        <DeveloperMode onClose={() => setShowDeveloperMode(false)} />
       )}
     </View>
   )

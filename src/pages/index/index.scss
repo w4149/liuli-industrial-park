@@ -51,6 +51,28 @@
   border-radius: 16px;
 }
 
+.map-toggle {
+  padding: 0 20px 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.toggle-btn {
+  background: white;
+  border: 2px solid #667eea;
+  border-radius: 20px;
+  padding: 10px 24px;
+  font-size: 14px;
+  color: #667eea;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.toggle-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
 .content-section {
   padding: 0 20px;
 }

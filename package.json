@@ -2,6 +2,10 @@
   "name": "liuli-park",
   "version": "1.0.0",
   "description": "琉璃文创园区互动小程序",
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
   "scripts": {
     "dev:weapp": "npx @tarojs/cli build --type weapp --watch",
     "build:weapp": "npx @tarojs/cli build --type weapp",
@@ -9,7 +13,7 @@
     "build:h5": "npx @tarojs/cli build --type h5"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.38.0",
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "@tarojs/components": "^3.6.33",
     "@tarojs/react": "^3.6.33",
     "@tarojs/runtime": "^3.6.33",

@@ -1,3 +1,4 @@
+import { supabase } from '@/utils/supabase'
 import { User, POI, InspirationMessage, Badge, ShopItem } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
@@ -20,13 +21,72 @@ const mockShopItems: ShopItem[] = [
 
 let userStore: Record<string, User> = {}
 
+const useSupabase = true
+
 export const api = {
   auth: {
     async signIn(openid: string, nickname: string, avatar: string): Promise<User> {
-      if (userStore[openid]) {
-        return userStore[openid]
+      if (!useSupabase) {
+        if (userStore[openid]) {
+          return userStore[openid]
+        }
+        const newUser: User = {
+          id: `user-${Date.now()}`,
+          openid,
+          nickname,
+          avatar,
+          inspiration_value: 0,
+          badges: [],
+          spatial_profile: {
+            total_visit_duration: 0,
+            most_visited_pois: [],
+            route_pattern: 'explorer',
+            discovered_hidden_details: 0,
+            inspiration_adoptions: 0,
+          },
+          ridge_beast_personality: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        userStore[openid] = newUser
+        return newUser
       }
-      const newUser: User = {
+
+      try {
+        const { data: existingUser } = await supabase.from('users').eqSingle('openid', openid)
+
+        if (existingUser) {
+          return existingUser as User
+        }
+
+        const newUser: Omit<User, 'id'> = {
+          openid,
+          nickname,
+          avatar,
+          inspiration_value: 0,
+          badges: [],
+          spatial_profile: {
+            total_visit_duration: 0,
+            most_visited_pois: [],
+            route_pattern: 'explorer',
+            discovered_hidden_details: 0,
+            inspiration_adoptions: 0,
+          },
+          ridge_beast_personality: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+
+        const { data: createdUser } = await supabase.from('users').insert([newUser])
+
+        if (createdUser && createdUser.length > 0) {
+          return createdUser[0] as User
+        }
+      } catch (error) {
+        console.warn('Supabase create user failed, using mock:', error)
+      }
+
+      const fallbackUser: User = {
         id: `user-${Date.now()}`,
         openid,
         nickname,
@@ -44,32 +104,105 @@ export const api = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
-      userStore[openid] = newUser
-      return newUser
+      userStore[openid] = fallbackUser
+      return fallbackUser
     },
 
     async getUser(openid: string): Promise<User | null> {
-      return userStore[openid] || null
+      if (!useSupabase) {
+        return userStore[openid] || null
+      }
+
+      try {
+        const { data } = await supabase.from('users').eqSingle('openid', openid)
+        return data as User | null
+      } catch (error) {
+        console.warn('Supabase get user failed:', error)
+        return userStore[openid] || null
+      }
     },
   },
 
   poi: {
     async getAll(): Promise<POI[]> {
-      return mockPOIs
+      if (!useSupabase) {
+        return mockPOIs
+      }
+
+      try {
+        const { data } = await supabase.from('pois').select()
+        return (data || mockPOIs) as POI[]
+      } catch (error) {
+        console.warn('Supabase get POIs failed, using mock:', error)
+        return mockPOIs
+      }
     },
 
     async getById(id: string): Promise<POI | null> {
-      return mockPOIs.find(p => p.id === id) || null
+      if (!useSupabase) {
+        return mockPOIs.find(p => p.id === id) || null
+      }
+
+      try {
+        const { data } = await supabase.from('pois').eqSingle('id', id)
+        return data as POI | null
+      } catch (error) {
+        console.warn('Supabase get POI failed, using mock:', error)
+        return mockPOIs.find(p => p.id === id) || null
+      }
     },
   },
 
   inspiration: {
     async getMessages(poiId: string): Promise<InspirationMessage[]> {
-      return mockMessages.filter(m => m.poi_id === poiId)
+      if (!useSupabase) {
+        return mockMessages.filter(m => m.poi_id === poiId)
+      }
+
+      try {
+        const { data } = await supabase.from('inspiration_messages').eq('poi_id', poiId)
+        return (data || mockMessages.filter(m => m.poi_id === poiId)) as InspirationMessage[]
+      } catch (error) {
+        console.warn('Supabase get messages failed, using mock:', error)
+        return mockMessages.filter(m => m.poi_id === poiId)
+      }
     },
 
     async createMessage(authorId: string, poiId: string, content: string): Promise<InspirationMessage> {
-      const newMessage: InspirationMessage = {
+      if (!useSupabase) {
+        const newMessage: InspirationMessage = {
+          id: `msg-${Date.now()}`,
+          author_id: authorId,
+          poi_id: poiId,
+          content,
+          likes: 0,
+          adoptions: 0,
+          created_at: new Date().toISOString(),
+        }
+        mockMessages.push(newMessage)
+        return newMessage
+      }
+
+      try {
+        const newMessage: Omit<InspirationMessage, 'id'> = {
+          author_id: authorId,
+          poi_id: poiId,
+          content,
+          likes: 0,
+          adoptions: 0,
+          created_at: new Date().toISOString(),
+        }
+
+        const { data } = await supabase.from('inspiration_messages').insert([newMessage])
+
+        if (data && data.length > 0) {
+          return data[0] as InspirationMessage
+        }
+      } catch (error) {
+        console.warn('Supabase create message failed, using mock:', error)
+      }
+
+      return {
         id: `msg-${Date.now()}`,
         author_id: authorId,
         poi_id: poiId,
@@ -78,56 +211,169 @@ export const api = {
         adoptions: 0,
         created_at: new Date().toISOString(),
       }
-      mockMessages.push(newMessage)
-      return newMessage
     },
 
     async likeMessage(messageId: string): Promise<void> {
-      const message = mockMessages.find(m => m.id === messageId)
-      if (message) {
-        message.likes += 1
+      if (!useSupabase) {
+        const message = mockMessages.find(m => m.id === messageId)
+        if (message) {
+          message.likes += 1
+        }
+        return
+      }
+
+      try {
+        const { data: messages } = await supabase.from('inspiration_messages').eqSingle('id', messageId)
+        if (messages) {
+          await supabase.from('inspiration_messages').update(
+            { likes: (messages.likes || 0) + 1 },
+            'id',
+            messageId
+          )
+        }
+      } catch (error) {
+        console.warn('Supabase like message failed:', error)
       }
     },
 
     async adoptMessage(messageId: string, userId: string): Promise<void> {
-      const message = mockMessages.find(m => m.id === messageId)
-      if (message) {
-        message.adoptions += 1
+      if (!useSupabase) {
+        const message = mockMessages.find(m => m.id === messageId)
+        if (message) {
+          message.adoptions += 1
+        }
+        const user = Object.values(userStore).find(u => u.id === userId)
+        if (user) {
+          user.inspiration_value += 10
+          user.spatial_profile.inspiration_adoptions += 1
+        }
+        return
       }
-      const user = Object.values(userStore).find(u => u.id === userId)
-      if (user) {
-        user.inspiration_value += 10
-        user.spatial_profile.inspiration_adoptions += 1
+
+      try {
+        const { data: messageData } = await supabase.from('inspiration_messages').eqSingle('id', messageId)
+        if (messageData) {
+          await supabase.from('inspiration_messages').update(
+            { adoptions: (messageData.adoptions || 0) + 1 },
+            'id',
+            messageId
+          )
+        }
+
+        const { data: userData } = await supabase.from('users').eqSingle('id', userId)
+        if (userData) {
+          await supabase.from('users').update(
+            { inspiration_value: (userData.inspiration_value || 0) + 10 },
+            'id',
+            userId
+          )
+        }
+      } catch (error) {
+        console.warn('Supabase adopt message failed:', error)
       }
     },
   },
 
   achievement: {
     async getAllBadges(): Promise<Badge[]> {
-      return mockBadges
+      if (!useSupabase) {
+        return mockBadges
+      }
+
+      try {
+        const { data } = await supabase.from('badges').select()
+        return (data || mockBadges) as Badge[]
+      } catch (error) {
+        console.warn('Supabase get badges failed, using mock:', error)
+        return mockBadges
+      }
     },
 
     async awardBadge(userId: string, badgeId: string): Promise<void> {
-      const user = Object.values(userStore).find(u => u.id === userId)
-      if (user && !user.badges.includes(badgeId)) {
-        user.badges.push(badgeId)
+      if (!useSupabase) {
+        const user = Object.values(userStore).find(u => u.id === userId)
+        if (user && !user.badges.includes(badgeId)) {
+          user.badges.push(badgeId)
+        }
+        return
+      }
+
+      try {
+        const { data: userData } = await supabase.from('users').eqSingle('id', userId)
+        if (userData) {
+          const badges = (userData.badges || []) as string[]
+          if (!badges.includes(badgeId)) {
+            badges.push(badgeId)
+            await supabase.from('users').update({ badges }, 'id', userId)
+          }
+        }
+      } catch (error) {
+        console.warn('Supabase award badge failed:', error)
       }
     },
   },
 
   shop: {
     async getAllItems(): Promise<ShopItem[]> {
-      return mockShopItems
+      if (!useSupabase) {
+        return mockShopItems
+      }
+
+      try {
+        const { data } = await supabase.from('shop_items').select()
+        return (data || mockShopItems) as ShopItem[]
+      } catch (error) {
+        console.warn('Supabase get shop items failed, using mock:', error)
+        return mockShopItems
+      }
     },
 
     async purchaseItem(userId: string, itemId: string): Promise<void> {
-      const item = mockShopItems.find(i => i.id === itemId)
-      const user = Object.values(userStore).find(u => u.id === userId)
-      if (!item || !user) throw new Error('商品或用户不存在')
-      if (item.stock <= 0) throw new Error('商品已售罄')
-      if (user.inspiration_value < item.price) throw new Error('灵感值不足')
-      user.inspiration_value -= item.price
-      item.stock -= 1
+      if (!useSupabase) {
+        const item = mockShopItems.find(i => i.id === itemId)
+        const user = Object.values(userStore).find(u => u.id === userId)
+        if (!item || !user) throw new Error('商品或用户不存在')
+        if (item.stock <= 0) throw new Error('商品已售罄')
+        if (user.inspiration_value < item.price) throw new Error('灵感值不足')
+        user.inspiration_value -= item.price
+        item.stock -= 1
+        return
+      }
+
+      try {
+        const { data: itemData } = await supabase.from('shop_items').eqSingle('id', itemId)
+        if (!itemData) {
+          throw new Error('商品不存在')
+        }
+
+        const { data: userData } = await supabase.from('users').eqSingle('id', userId)
+        if (!userData) {
+          throw new Error('用户不存在')
+        }
+
+        if (itemData.stock <= 0) {
+          throw new Error('商品已售罄')
+        }
+
+        if ((userData.inspiration_value || 0) < itemData.price) {
+          throw new Error('灵感值不足')
+        }
+
+        await supabase.from('shop_items').update(
+          { stock: itemData.stock - 1 },
+          'id',
+          itemId
+        )
+
+        await supabase.from('users').update(
+          { inspiration_value: (userData.inspiration_value || 0) - itemData.price },
+          'id',
+          userId
+        )
+      } catch (error) {
+        console.warn('Supabase purchase failed:', error)
+        throw error
+      }
     },
   },
 }
