@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { View, Text, Input } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import AMapLoader from '@amap/amap-jsapi-loader'
 import './index.scss'
 
 interface CalibrationPoint {
@@ -24,6 +24,9 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   const [currentLat, setCurrentLat] = useState<number | null>(null)
   const [calibrationPoints, setCalibrationPoints] = useState<CalibrationPoint[]>([])
   const [uploadStatus, setUploadStatus] = useState('')
+  const [isLocating, setIsLocating] = useState(false)
+  const [geolocationReady, setGeolocationReady] = useState(false)
+  let geolocation: any = null
 
   useEffect(() => {
     const saved = localStorage.getItem('liuli_calibration_points')
@@ -35,33 +38,118 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       }
     }
 
-    getLocation()
+    initGeolocation()
   }, [])
 
+  const initGeolocation = () => {
+    const amapKey = process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'
+    const securityJsCode = process.env.AMAP_SECRET_KEY || ''
+
+    if (securityJsCode) {
+      ;(window as any)._AMapSecurityConfig = {
+        securityJsCode,
+      }
+    }
+
+    AMapLoader.load({
+      key: amapKey,
+      version: '2.0',
+      plugins: ['AMap.Geolocation'],
+    })
+      .then((AMap: any) => {
+        geolocation = new AMap.Geolocation({
+          enableHighAccuracy: false,
+          timeout: 8000,
+          maximumAge: 300000,
+          convert: true,
+          showButton: false,
+          showMarker: false,
+          showCircle: false,
+          panToLocation: false,
+        })
+        setGeolocationReady(true)
+        getLocation()
+      })
+      .catch((error: any) => {
+        console.error('AMap Geolocation init error:', error)
+        fallbackGeolocation()
+      })
+  }
+
   const getLocation = () => {
-    Taro.getLocation({
-      type: 'gcj02',
-      highAccuracyExpireTime: 30000,
-      success: (res) => {
-        setCurrentLng(res.longitude)
-        setCurrentLat(res.latitude)
-      },
-      fail: (error) => {
-        console.warn('Taro getLocation error:', error)
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              setCurrentLng(position.coords.longitude)
-              setCurrentLat(position.coords.latitude)
-            },
-            (err) => {
-              console.warn('Browser geolocation error:', err)
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-          )
-        }
+    if (!geolocation) {
+      fallbackGeolocation()
+      return
+    }
+
+    setIsLocating(true)
+    geolocation.getCurrentPosition((status: string, result: any) => {
+      setIsLocating(false)
+      if (status === 'complete' && result.position) {
+        setCurrentLng(result.position.lng)
+        setCurrentLat(result.position.lat)
+      } else {
+        console.warn('AMap geolocation failed, trying fallback:', result)
+        fallbackGeolocation()
       }
     })
+  }
+
+  const fallbackGeolocation = () => {
+    if (navigator.geolocation) {
+      setIsLocating(true)
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setIsLocating(false)
+          const lng = position.coords.longitude
+          const lat = position.coords.latitude
+          const converted = wgs84ToGcj02(lng, lat)
+          setCurrentLng(converted.lng)
+          setCurrentLat(converted.lat)
+        },
+        (err) => {
+          setIsLocating(false)
+          console.warn('Browser geolocation error:', err)
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      )
+    }
+  }
+
+  const wgs84ToGcj02 = (lng: number, lat: number) => {
+    const PI = Math.PI
+    const a = 6378245.0
+    const ee = 0.00669342162296594323
+
+    const transformLat = (x: number, y: number) => {
+      let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+      ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0
+      ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0
+      ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0
+      return ret
+    }
+
+    const transformLng = (x: number, y: number) => {
+      let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+      ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0
+      ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0
+      ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0
+      return ret
+    }
+
+    const dLat = transformLat(lng - 105.0, lat - 35.0)
+    const dLng = transformLng(lng - 105.0, lat - 35.0)
+    const radLat = lat / 180.0 * PI
+    let magic = Math.sin(radLat)
+    magic = 1 - ee * magic * magic
+    const sqrtMagic = Math.sqrt(magic)
+    dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI)
+    dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI)
+
+    return {
+      lng: lng + dLng,
+      lat: lat + dLat,
+    }
   }
 
   const handleAuthenticate = () => {
@@ -107,38 +195,48 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
 
   const handleRefreshLocation = () => {
     setUploadStatus('📍 正在获取定位...')
-    Taro.getLocation({
-      type: 'gcj02',
-      highAccuracyExpireTime: 30000,
-      success: (res) => {
-        setCurrentLng(res.longitude)
-        setCurrentLat(res.latitude)
+    if (!geolocation) {
+      setUploadStatus('⚠️ 定位服务初始化中，请稍后重试')
+      setTimeout(() => setUploadStatus(''), 2000)
+      return
+    }
+
+    geolocation.getCurrentPosition((status: string, result: any) => {
+      if (status === 'complete' && result.position) {
+        setCurrentLng(result.position.lng)
+        setCurrentLat(result.position.lat)
         setUploadStatus('✅ 定位已更新')
         setTimeout(() => setUploadStatus(''), 2000)
-      },
-      fail: (error) => {
-        console.warn('Taro getLocation error:', error)
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              setCurrentLng(position.coords.longitude)
-              setCurrentLat(position.coords.latitude)
-              setUploadStatus('✅ 定位已更新')
-              setTimeout(() => setUploadStatus(''), 2000)
-            },
-            (err) => {
-              console.warn('Browser geolocation error:', err)
-              setUploadStatus('⚠️ 获取定位失败')
-              setTimeout(() => setUploadStatus(''), 2000)
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-          )
-        } else {
-          setUploadStatus('⚠️ 获取定位失败')
-          setTimeout(() => setUploadStatus(''), 2000)
-        }
+      } else {
+        console.warn('AMap geolocation failed, trying fallback:', result)
+        fallbackRefreshLocation()
       }
     })
+  }
+
+  const fallbackRefreshLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lng = position.coords.longitude
+          const lat = position.coords.latitude
+          const converted = wgs84ToGcj02(lng, lat)
+          setCurrentLng(converted.lng)
+          setCurrentLat(converted.lat)
+          setUploadStatus('✅ 定位已更新')
+          setTimeout(() => setUploadStatus(''), 2000)
+        },
+        (err) => {
+          console.warn('Browser geolocation error:', err)
+          setUploadStatus('⚠️ 获取定位失败')
+          setTimeout(() => setUploadStatus(''), 2000)
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      )
+    } else {
+      setUploadStatus('⚠️ 获取定位失败')
+      setTimeout(() => setUploadStatus(''), 2000)
+    }
   }
 
   if (!isAuthenticated) {
