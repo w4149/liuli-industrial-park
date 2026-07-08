@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { View, Text, Input } from '@tarojs/components'
+import Taro from '@tarojs/taro'
 import './index.scss'
 
 interface CalibrationPoint {
@@ -34,19 +35,34 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       }
     }
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLng(position.coords.longitude)
-          setCurrentLat(position.coords.latitude)
-        },
-        (error) => {
-          console.warn('Geolocation error:', error)
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      )
-    }
+    getLocation()
   }, [])
+
+  const getLocation = () => {
+    Taro.getLocation({
+      type: 'gcj02',
+      highAccuracyExpireTime: 30000,
+      success: (res) => {
+        setCurrentLng(res.longitude)
+        setCurrentLat(res.latitude)
+      },
+      fail: (error) => {
+        console.warn('Taro getLocation error:', error)
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setCurrentLng(position.coords.longitude)
+              setCurrentLat(position.coords.latitude)
+            },
+            (err) => {
+              console.warn('Browser geolocation error:', err)
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          )
+        }
+      }
+    })
+  }
 
   const handleAuthenticate = () => {
     if (password === 'wjj147258') {
@@ -90,21 +106,39 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   }
 
   const handleRefreshLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLng(position.coords.longitude)
-          setCurrentLat(position.coords.latitude)
-          setUploadStatus('📍 定位已更新')
-          setTimeout(() => setUploadStatus(''), 2000)
-        },
-        (error) => {
+    setUploadStatus('📍 正在获取定位...')
+    Taro.getLocation({
+      type: 'gcj02',
+      highAccuracyExpireTime: 30000,
+      success: (res) => {
+        setCurrentLng(res.longitude)
+        setCurrentLat(res.latitude)
+        setUploadStatus('✅ 定位已更新')
+        setTimeout(() => setUploadStatus(''), 2000)
+      },
+      fail: (error) => {
+        console.warn('Taro getLocation error:', error)
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setCurrentLng(position.coords.longitude)
+              setCurrentLat(position.coords.latitude)
+              setUploadStatus('✅ 定位已更新')
+              setTimeout(() => setUploadStatus(''), 2000)
+            },
+            (err) => {
+              console.warn('Browser geolocation error:', err)
+              setUploadStatus('⚠️ 获取定位失败')
+              setTimeout(() => setUploadStatus(''), 2000)
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          )
+        } else {
           setUploadStatus('⚠️ 获取定位失败')
           setTimeout(() => setUploadStatus(''), 2000)
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      )
-    }
+        }
+      }
+    })
   }
 
   if (!isAuthenticated) {
