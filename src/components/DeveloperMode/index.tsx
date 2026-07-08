@@ -119,7 +119,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
             type="password"
             placeholder="请输入密码"
             value={password}
-            onChange={(e: any) => setPassword(e.detail.value)}
+            onInput={(e: any) => setPassword(e.detail.value)}
             onConfirm={handleAuthenticate}
           />
 
@@ -170,7 +170,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
             className="name-input"
             placeholder="输入位置名称（如：大门、展厅A）"
             value={locationName}
-            onChange={(e: any) => setLocationName(e.detail.value)}
+            onInput={(e: any) => setLocationName(e.detail.value)}
           />
           
           {uploadStatus && (
