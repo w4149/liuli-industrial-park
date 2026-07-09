@@ -9,12 +9,23 @@
 .header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 40px 20px 20px;
+  position: relative;
 }
 
 .title {
   font-size: 24px;
   font-weight: 600;
   color: white;
+}
+
+.header-back-btn {
+  position: absolute;
+  left: 20px;
+  top: 40px;
+  font-size: 24px;
+  color: white;
+  cursor: pointer;
+  padding: 8px;
 }
 
 .user-card {

@@ -164,6 +164,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       } catch (e) {
         console.warn('Map cleanup error:', e)
       }
+      setMapLoaded(false)
+      setLocationStatus('idle')
       initializedRef.current = false
     }
   }, [pois, onPOIClick, customMapUrl, customMapBounds])

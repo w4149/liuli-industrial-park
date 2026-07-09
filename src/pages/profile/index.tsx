@@ -87,7 +87,7 @@ const Profile: React.FC = () => {
   return (
     <View className="profile-page">
       <View className="header">
-        <Text className="back-btn" onClick={handleBack}>←</Text>
+        <Text className="header-back-btn" onClick={handleBack}>←</Text>
         <Text className="title">我的档案</Text>
       </View>
 
