@@ -70,6 +70,13 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             })
             map.add(groundImage)
             groundImageRef.current = groundImage
+            
+            const bounds = new AMap.Bounds(
+              new AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
+              new AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1])
+            )
+            map.setBounds(bounds, true, [50, 50, 50, 50])
+            
             setCustomMapLoaded(true)
           }
           img.onerror = () => {
@@ -188,11 +195,22 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (status === 'complete' && result.position) {
         setLocationStatus('success')
         
-        map.setCenter([result.position.lng, result.position.lat], true)
-        map.setZoom(18)
+        const userPos = [result.position.lng, result.position.lat]
+
+        if (customMapBounds) {
+          const bounds = new (window as any).AMap.Bounds(
+            new (window as any).AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
+            new (window as any).AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1])
+          )
+          bounds.extend(new (window as any).AMap.LngLat(userPos[0], userPos[1]))
+          map.setBounds(bounds, true, [50, 50, 50, 50])
+        } else {
+          map.setCenter(userPos, true)
+          map.setZoom(18)
+        }
 
         const userMarker = new (window as any).AMap.Marker({
-          position: [result.position.lng, result.position.lat],
+          position: userPos,
           title: '我的位置',
           zIndex: 1000,
         })
