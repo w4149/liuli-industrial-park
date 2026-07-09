@@ -76,7 +76,12 @@ const Profile: React.FC = () => {
   }
 
   const handleBack = () => {
-    Taro.navigateBack()
+    Taro.switchTab({
+      url: '/pages/index/index',
+      fail: () => {
+        Taro.navigateTo({ url: '/pages/index/index' })
+      }
+    })
   }
 
   return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import './index.scss'
@@ -26,7 +26,9 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   const [uploadStatus, setUploadStatus] = useState('')
   const [isLocating, setIsLocating] = useState(false)
   const [geolocationReady, setGeolocationReady] = useState(false)
-  let geolocation: any = null
+  const [locationError, setLocationError] = useState<string>('')
+  const geolocationRef = useRef<any>(null)
+  const citySearchRef = useRef<any>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('liuli_calibration_points')
@@ -54,12 +56,12 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     AMapLoader.load({
       key: amapKey,
       version: '2.0',
-      plugins: ['AMap.Geolocation'],
+      plugins: ['AMap.Geolocation', 'AMap.CitySearch'],
     })
       .then((AMap: any) => {
-        geolocation = new AMap.Geolocation({
+        geolocationRef.current = new AMap.Geolocation({
           enableHighAccuracy: false,
-          timeout: 8000,
+          timeout: 6000,
           maximumAge: 300000,
           convert: true,
           showButton: false,
@@ -67,6 +69,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           showCircle: false,
           panToLocation: false,
         })
+        citySearchRef.current = new AMap.CitySearch()
         setGeolocationReady(true)
         getLocation()
       })
@@ -77,17 +80,19 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   }
 
   const getLocation = () => {
-    if (!geolocation) {
+    setLocationError('')
+    if (!geolocationRef.current) {
       fallbackGeolocation()
       return
     }
 
     setIsLocating(true)
-    geolocation.getCurrentPosition((status: string, result: any) => {
+    geolocationRef.current.getCurrentPosition((status: string, result: any) => {
       setIsLocating(false)
       if (status === 'complete' && result.position) {
         setCurrentLng(result.position.lng)
         setCurrentLat(result.position.lat)
+        setLocationError('')
       } else {
         console.warn('AMap geolocation failed, trying fallback:', result)
         fallbackGeolocation()
@@ -106,14 +111,38 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           const converted = wgs84ToGcj02(lng, lat)
           setCurrentLng(converted.lng)
           setCurrentLat(converted.lat)
+          setLocationError('')
         },
         (err) => {
           setIsLocating(false)
           console.warn('Browser geolocation error:', err)
+          ipFallbackLocation()
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 8000 }
       )
+    } else {
+      ipFallbackLocation()
     }
+  }
+
+  const ipFallbackLocation = () => {
+    if (!citySearchRef.current) {
+      setLocationError('⚠️ 无法获取定位，请检查网络连接')
+      return
+    }
+
+    citySearchRef.current.getLocalCity((status: string, result: any) => {
+      if (status === 'complete' && result.city && result.bounds) {
+        const center = result.bounds.getCenter()
+        setCurrentLng(center.lng)
+        setCurrentLat(center.lat)
+        setLocationError('📍 IP定位（精度约城市级别）')
+        console.log('IP-based location:', center)
+      } else {
+        console.warn('AMap CitySearch failed:', result)
+        setLocationError('⚠️ 无法获取定位，请检查网络连接')
+      }
+    })
   }
 
   const wgs84ToGcj02 = (lng: number, lat: number) => {
@@ -195,16 +224,18 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
 
   const handleRefreshLocation = () => {
     setUploadStatus('📍 正在获取定位...')
-    if (!geolocation) {
+    setLocationError('')
+    if (!geolocationRef.current) {
       setUploadStatus('⚠️ 定位服务初始化中，请稍后重试')
       setTimeout(() => setUploadStatus(''), 2000)
       return
     }
 
-    geolocation.getCurrentPosition((status: string, result: any) => {
+    geolocationRef.current.getCurrentPosition((status: string, result: any) => {
       if (status === 'complete' && result.position) {
         setCurrentLng(result.position.lng)
         setCurrentLat(result.position.lat)
+        setLocationError('')
         setUploadStatus('✅ 定位已更新')
         setTimeout(() => setUploadStatus(''), 2000)
       } else {
@@ -223,11 +254,18 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           const converted = wgs84ToGcj02(lng, lat)
           setCurrentLng(converted.lng)
           setCurrentLat(converted.lat)
+          setLocationError('')
           setUploadStatus('✅ 定位已更新')
           setTimeout(() => setUploadStatus(''), 2000)
         },
         (err) => {
           console.warn('Browser geolocation error:', err)
+          const errorMessages: Record<number, string> = {
+            1: '🚫 位置权限被拒绝，请在浏览器设置中允许位置访问',
+            2: '🔇 位置信息不可用',
+            3: '⏰ 定位请求超时，请检查网络或稍后重试',
+          }
+          setLocationError(errorMessages[err.code] || '⚠️ 获取定位失败')
           setUploadStatus('⚠️ 获取定位失败')
           setTimeout(() => setUploadStatus(''), 2000)
         },
@@ -284,13 +322,27 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           <View className="location-info">
             <View className="location-item">
               <Text className="location-label">经度</Text>
-              <Text className="location-value">{currentLng?.toFixed(6) || '获取中...'}</Text>
+              <Text className="location-value">
+                {isLocating ? '定位中...' : (currentLng?.toFixed(6) || '获取中...')}
+              </Text>
             </View>
             <View className="location-item">
               <Text className="location-label">纬度</Text>
-              <Text className="location-value">{currentLat?.toFixed(6) || '获取中...'}</Text>
+              <Text className="location-value">
+                {isLocating ? '定位中...' : (currentLat?.toFixed(6) || '获取中...')}
+              </Text>
             </View>
           </View>
+          {!geolocationReady && (
+            <Text className="status-text" style={{ color: '#999', fontSize: '12px', marginBottom: '10px' }}>
+              ⏳ 定位服务初始化中...
+            </Text>
+          )}
+          {locationError && (
+            <Text className="status-text" style={{ color: '#ff6b6b', fontSize: '12px', marginBottom: '10px' }}>
+              {locationError}
+            </Text>
+          )}
           <button className="refresh-btn" onClick={handleRefreshLocation}>
             🔄 刷新定位
           </button>
