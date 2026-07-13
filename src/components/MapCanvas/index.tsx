@@ -26,6 +26,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const [locationStatus, setLocationStatus] = useState<string>('idle')
   const [mapError, setMapError] = useState<string | null>(null)
   const [customMapLoaded, setCustomMapLoaded] = useState(false)
+  const [showManualInput, setShowManualInput] = useState(false)
+  const [manualLng, setManualLng] = useState('116.3978')
+  const [manualLat, setManualLat] = useState('39.9085')
 
   useEffect(() => {
     const container = mapContainerRef.current
@@ -177,10 +180,40 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [pois, onPOIClick, customMapUrl, customMapBounds])
 
+  const handleLocationSuccess = (lng: number, lat: number) => {
+    const map = mapRef.current
+    if (!map) return
+
+    setIsLocating(false)
+    setLocationStatus('success')
+
+    const userPos = [lng, lat]
+
+    if (customMapBounds) {
+      const bounds = new (window as any).AMap.Bounds(
+        new (window as any).AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
+        new (window as any).AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1])
+      )
+      bounds.extend(new (window as any).AMap.LngLat(userPos[0], userPos[1]))
+      map.setBounds(bounds, true, [50, 50, 50, 50])
+    } else {
+      map.setCenter(userPos, true)
+      map.setZoom(18)
+    }
+
+    const userMarker = new (window as any).AMap.Marker({
+      position: userPos,
+      title: '我的位置',
+      zIndex: 1000,
+    })
+    userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
+    map.add(userMarker)
+    userMarkerRef.current = userMarker
+  }
+
   const handleLocate = () => {
     const map = mapRef.current
-    const geolocation = geolocationRef.current
-    if (!map || !geolocation) return
+    if (!map) return
 
     setIsLocating(true)
     setLocationStatus('locating')
@@ -190,37 +223,92 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       userMarkerRef.current = null
     }
 
-    geolocation.getCurrentPosition((status: string, result: any) => {
+    const failCallback = (error: any) => {
+      console.error('Location error:', error)
       setIsLocating(false)
-      if (status === 'complete' && result.position) {
-        setLocationStatus('success')
-        
-        const userPos = [result.position.lng, result.position.lat]
+      setLocationStatus('failed')
+    }
 
-        if (customMapBounds) {
-          const bounds = new (window as any).AMap.Bounds(
-            new (window as any).AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
-            new (window as any).AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1])
+    const tryNativeGeolocation = () => {
+      return new Promise<{ lng: number; lat: number }>((resolve, reject) => {
+        if ('geolocation' in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              resolve({
+                lng: position.coords.longitude,
+                lat: position.coords.latitude,
+              })
+            },
+            (error) => {
+              reject({ source: 'native', error })
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 8000,
+              maximumAge: 300000,
+            }
           )
-          bounds.extend(new (window as any).AMap.LngLat(userPos[0], userPos[1]))
-          map.setBounds(bounds, true, [50, 50, 50, 50])
         } else {
-          map.setCenter(userPos, true)
-          map.setZoom(18)
+          reject({ source: 'native', error: new Error('Geolocation API not supported') })
+        }
+      })
+    }
+
+    const tryTaroGeolocation = () => {
+      return new Promise<{ lng: number; lat: number }>((resolve, reject) => {
+        try {
+          Taro.getLocation({
+            type: 'gcj02',
+            success: (res) => {
+              resolve({
+                lng: res.longitude,
+                lat: res.latitude,
+              })
+            },
+            fail: (error) => {
+              reject({ source: 'taro', error })
+            },
+          })
+        } catch (e) {
+          reject({ source: 'taro', error: e })
+        }
+      })
+    }
+
+    const tryAmapGeolocation = () => {
+      return new Promise<{ lng: number; lat: number }>((resolve, reject) => {
+        const geolocation = geolocationRef.current
+        if (!geolocation) {
+          reject({ source: 'amap', error: new Error('AMap Geolocation not initialized') })
+          return
         }
 
-        const userMarker = new (window as any).AMap.Marker({
-          position: userPos,
-          title: '我的位置',
-          zIndex: 1000,
+        geolocation.getCurrentPosition((status: string, result: any) => {
+          if (status === 'complete' && result.position) {
+            resolve({
+              lng: result.position.lng,
+              lat: result.position.lat,
+            })
+          } else {
+            reject({ source: 'amap', error: new Error(`AMap geolocation failed: ${status}`) })
+          }
         })
-        userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
-        map.add(userMarker)
-        userMarkerRef.current = userMarker
-      } else {
-        setLocationStatus('failed')
-      }
-    })
+      })
+    }
+
+    tryNativeGeolocation()
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat))
+      .catch((nativeError) => {
+        console.warn('Native geolocation failed, trying Taro...', nativeError)
+        return tryTaroGeolocation()
+      })
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat))
+      .catch((taroError) => {
+        console.warn('Taro geolocation failed, trying AMap...', taroError)
+        return tryAmapGeolocation()
+      })
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat))
+      .catch(failCallback)
   }
 
   if (mapError) {
@@ -252,25 +340,94 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         </div>
       )}
 
-      {locationStatus === 'failed' && !isLocating && (
+      {locationStatus === 'failed' && !isLocating && !showManualInput && (
         <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '10px 20px', borderRadius: '20px', zIndex: 100, textAlign: 'center', fontSize: '14px' }}>
           <div>⚠️ 定位失败，请重试</div>
-          <button
-            onClick={handleLocate}
-            style={{ marginTop: '10px', background: '#667eea', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '15px', fontSize: '14px', cursor: 'pointer' }}
-          >
-            重试定位
-          </button>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px', justifyContent: 'center' }}>
+            <button
+              onClick={handleLocate}
+              style={{ background: '#667eea', color: '#fff', border: 'none', padding: '8px 15px', borderRadius: '15px', fontSize: '14px', cursor: 'pointer' }}
+            >
+              重试定位
+            </button>
+            <button
+              onClick={() => setShowManualInput(true)}
+              style={{ background: '#f093fb', color: '#fff', border: 'none', padding: '8px 15px', borderRadius: '15px', fontSize: '14px', cursor: 'pointer' }}
+            >
+              手动定位
+            </button>
+          </div>
         </div>
       )}
 
       {mapLoaded && locationStatus === 'idle' && (
-        <button
-          onClick={handleLocate}
-          style={{ position: 'absolute', bottom: '20px', right: '20px', background: '#667eea', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '20px', fontSize: '14px', cursor: 'pointer', zIndex: 100, boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
-        >
-          📍 定位
-        </button>
+        <div style={{ position: 'absolute', bottom: '20px', right: '20px', display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => setShowManualInput(true)}
+            style={{ background: '#f093fb', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '20px', fontSize: '14px', cursor: 'pointer', zIndex: 100, boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
+          >
+            📝 手动定位
+          </button>
+          <button
+            onClick={handleLocate}
+            style={{ background: '#667eea', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '20px', fontSize: '14px', cursor: 'pointer', zIndex: 100, boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
+          >
+            📍 定位
+          </button>
+        </div>
+      )}
+
+      {showManualInput && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(255,255,255,0.95)', padding: '20px', borderRadius: '20px', zIndex: 200, textAlign: 'center', minWidth: '280px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '15px', color: '#333' }}>📍 手动定位</div>
+          <div style={{ marginBottom: '10px', textAlign: 'left' }}>
+            <label style={{ display: 'block', fontSize: '14px', color: '#666', marginBottom: '5px' }}>经度 (Lng)</label>
+            <input
+              type="text"
+              value={manualLng}
+              onChange={(e) => setManualLng(e.target.value)}
+              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
+              placeholder="116.3978"
+            />
+          </div>
+          <div style={{ marginBottom: '15px', textAlign: 'left' }}>
+            <label style={{ display: 'block', fontSize: '14px', color: '#666', marginBottom: '5px' }}>纬度 (Lat)</label>
+            <input
+              type="text"
+              value={manualLat}
+              onChange={(e) => setManualLat(e.target.value)}
+              style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px' }}
+              placeholder="39.9085"
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+            <button
+              onClick={() => setShowManualInput(false)}
+              style={{ background: '#999', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '15px', fontSize: '14px', cursor: 'pointer' }}
+            >
+              取消
+            </button>
+            <button
+              onClick={() => {
+                const lng = parseFloat(manualLng)
+                const lat = parseFloat(manualLat)
+                if (!isNaN(lng) && !isNaN(lat)) {
+                  if (userMarkerRef.current && mapRef.current) {
+                    mapRef.current.remove(userMarkerRef.current)
+                    userMarkerRef.current = null
+                  }
+                  handleLocationSuccess(lng, lat)
+                  setShowManualInput(false)
+                } else {
+                  alert('请输入有效的经纬度')
+                }
+              }}
+              style={{ background: '#667eea', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '15px', fontSize: '14px', cursor: 'pointer' }}
+            >
+              确定定位
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
