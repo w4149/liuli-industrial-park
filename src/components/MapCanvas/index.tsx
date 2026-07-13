@@ -227,6 +227,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       console.error('Location error:', error)
       setIsLocating(false)
       setLocationStatus('failed')
+      
+      if (!process.env.AMAP_SECRET_KEY) {
+        console.warn('⚠️ AMAP_SECRET_KEY is not configured. Geolocation may fail in production.')
+      }
     }
 
     const tryNativeGeolocation = () => {
