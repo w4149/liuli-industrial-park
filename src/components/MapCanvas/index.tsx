@@ -50,7 +50,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     initializedRef.current = true
 
     const amapKey = process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'
-    const securityJsCode = process.env.AMAP_SECRET_KEY || ''
+    const securityJsCode = process.env.AMAP_SECRET_KEY || 'dde3ac3456c911b38951e739a85f1d93'
 
     setDebugInfo(prev => ({
       ...prev,
@@ -374,11 +374,28 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
   if (mapError) {
     return (
-      <div style={{ width: '100%', height: '400px', borderRadius: '16px', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center', color: '#999' }}>
+      <div style={{ width: '100%', height: '400px', borderRadius: '16px', background: '#f5f5f5', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', color: '#999' }}>
           <div style={{ fontSize: '48px', marginBottom: '10px' }}>🗺️</div>
           <div>{mapError}</div>
           <div style={{ fontSize: '12px', marginTop: '5px' }}>请检查环境变量配置</div>
+        </div>
+        <div style={{ position: 'absolute', bottom: '0', left: '0', right: '0', background: 'rgba(0,0,0,0.8)', color: '#fff', padding: '8px 12px', fontSize: '10px', zIndex: 50, maxHeight: '150px', overflowY: 'auto' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#f093fb' }}>🔍 调试信息</div>
+          <div>API Key: {debugInfo.amapKey}</div>
+          <div>安全密钥: {debugInfo.securityKey}</div>
+          <div>HTTPS: {debugInfo.isHttps ? '✅' : '❌'}</div>
+          <div>Geolocation API: {debugInfo.hasGeolocation ? '✅支持' : '❌不支持'}</div>
+          {debugInfo.locationAttempts.length > 0 && (
+            <div style={{ marginTop: '4px' }}>
+              <div style={{ color: '#667eea', fontWeight: 'bold' }}>定位尝试:</div>
+              {debugInfo.locationAttempts.map((attempt, i) => (
+                <div key={i} style={{ marginLeft: '8px', color: attempt.status === 'success' ? '#4caf50' : '#f44336' }}>
+                  • {attempt.source}: {attempt.status} {attempt.error ? `(${attempt.error})` : ''}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )
