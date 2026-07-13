@@ -45,11 +45,31 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       }
     }
 
-    AMapLoader.load({
-      key: amapKey,
-      version: '2.0',
-      plugins: ['AMap.Geolocation'],
-    })
+    const loadMapScript = (): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        const existingScript = document.getElementById('amap-loader')
+        if (existingScript) {
+          resolve()
+          return
+        }
+
+        const script = document.createElement('script')
+        script.id = 'amap-loader'
+        script.src = 'https://webapi.amap.com/loader.js'
+        script.onload = () => resolve()
+        script.onerror = () => reject(new Error('AMap loader script failed to load'))
+        document.head.appendChild(script)
+      })
+    }
+
+    loadMapScript()
+      .then(() => {
+        return AMapLoader.load({
+          key: amapKey,
+          version: '2.0',
+          plugins: ['AMap.Geolocation'],
+        })
+      })
       .then((AMap: any) => {
         aMapRef.current = AMap
 
