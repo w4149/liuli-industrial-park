@@ -36,7 +36,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     initializedRef.current = true
 
     const amapKey = process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'
-    const securityJsCode = process.env.AMAP_SECRET_KEY || 'dde3ac3456c911b38951e739a85f1d93'
+    const securityJsCode = process.env.AMAP_SECRET_KEY || ''
 
     if (securityJsCode) {
       ;(window as any)._AMapSecurityConfig = {
