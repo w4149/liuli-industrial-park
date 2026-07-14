@@ -1,5 +1,6 @@
 import { defineConfig } from '@tarojs/cli'
 import path from 'path'
+import webpack from 'webpack'
 
 export default defineConfig({
   projectName: 'liuli-park',
@@ -60,6 +61,14 @@ export default defineConfig({
     },
     webpackChain(chain) {
       chain.resolve.alias.set('@', path.resolve(__dirname, 'src'))
+      chain.plugin('define').use(webpack.DefinePlugin, [
+        {
+          'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_URL || ''),
+          'process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''),
+          'process.env.AMAP_WEB_KEY': JSON.stringify(process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'),
+          'process.env.AMAP_SECRET_KEY': JSON.stringify(process.env.AMAP_SECRET_KEY || ''),
+        },
+      ])
     },
   },
 })
