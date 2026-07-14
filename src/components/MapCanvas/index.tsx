@@ -44,6 +44,20 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
   const loadCalibrationPoints = async () => {
     try {
+      const env = (window as any).__ENV__ || {}
+      const supabaseUrl = env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+      if (!supabaseUrl) {
+        console.warn('SUPABASE_URL is not configured, skipping Supabase load')
+        const saved = localStorage.getItem('liuli_calibration_points')
+        if (saved) {
+          try {
+            setCalibrationPoints(JSON.parse(saved))
+          } catch (e) {
+            console.warn('Failed to parse calibration points:', e)
+          }
+        }
+        return
+      }
       const { data, error } = await supabaseClient.from('calibration_points').select('*')
       if (error) {
         console.warn('Failed to load from Supabase, falling back to localStorage:', error)
