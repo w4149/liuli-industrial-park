@@ -1,6 +1,6 @@
 const env = (typeof window !== 'undefined' && (window as any).__ENV__) || {}
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
+const supabaseUrl = env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+const supabaseKey = env.SUPABASE_KEY || process.env.SUPABASE_KEY || ''
 
 const headers = {
   'Content-Type': 'application/json',
