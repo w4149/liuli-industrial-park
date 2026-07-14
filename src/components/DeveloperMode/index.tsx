@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
+import { supabaseClient } from '@/utils/supabase/client'
 import './index.scss'
 
 interface CalibrationPoint {
@@ -31,17 +32,55 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   const citySearchRef = useRef<any>(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem('liuli_calibration_points')
-    if (saved) {
-      try {
-        setCalibrationPoints(JSON.parse(saved))
-      } catch {
-        setCalibrationPoints([])
-      }
-    }
-
+    loadCalibrationPoints()
     initGeolocation()
   }, [])
+
+  const loadCalibrationPoints = async () => {
+    try {
+      const { data, error } = await supabaseClient.from('calibration_points').select('*')
+      if (error) {
+        console.warn('Failed to load from Supabase, falling back to localStorage:', error)
+        const saved = localStorage.getItem('liuli_calibration_points')
+        if (saved) {
+          try {
+            setCalibrationPoints(JSON.parse(saved))
+          } catch {
+            setCalibrationPoints([])
+          }
+        }
+      } else if (data && data.length > 0) {
+        const points = data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          lng: p.lng,
+          lat: p.lat,
+          timestamp: p.timestamp || Date.now(),
+        }))
+        setCalibrationPoints(points)
+        localStorage.setItem('liuli_calibration_points', JSON.stringify(points))
+      } else {
+        const saved = localStorage.getItem('liuli_calibration_points')
+        if (saved) {
+          try {
+            setCalibrationPoints(JSON.parse(saved))
+          } catch {
+            setCalibrationPoints([])
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase load error:', e)
+      const saved = localStorage.getItem('liuli_calibration_points')
+      if (saved) {
+        try {
+          setCalibrationPoints(JSON.parse(saved))
+        } catch {
+          setCalibrationPoints([])
+        }
+      }
+    }
+  }
 
   const initGeolocation = () => {
     const amapKey = process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'
@@ -190,7 +229,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     }
   }
 
-  const handleUploadLocation = () => {
+  const handleUploadLocation = async () => {
     if (!locationName.trim()) {
       setUploadStatus('请输入位置名称')
       return
@@ -211,15 +250,29 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     const updatedPoints = [...calibrationPoints, newPoint]
     setCalibrationPoints(updatedPoints)
     localStorage.setItem('liuli_calibration_points', JSON.stringify(updatedPoints))
+
+    try {
+      await supabaseClient.from('calibration_points').insert([newPoint])
+      setUploadStatus('✅ 上传成功（已同步到云端）')
+    } catch (error) {
+      console.warn('Failed to sync to Supabase:', error)
+      setUploadStatus('✅ 上传成功（本地保存）')
+    }
+
     setLocationName('')
-    setUploadStatus('✅ 上传成功')
     setTimeout(() => setUploadStatus(''), 2000)
   }
 
-  const handleDeletePoint = (id: string) => {
+  const handleDeletePoint = async (id: string) => {
     const updatedPoints = calibrationPoints.filter((p) => p.id !== id)
     setCalibrationPoints(updatedPoints)
     localStorage.setItem('liuli_calibration_points', JSON.stringify(updatedPoints))
+
+    try {
+      await supabaseClient.from('calibration_points').delete('id', id)
+    } catch (error) {
+      console.warn('Failed to delete from Supabase:', error)
+    }
   }
 
   const handleRefreshLocation = () => {

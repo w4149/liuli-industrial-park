@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { POI } from '@/types'
+import { supabaseClient } from '@/utils/supabase/client'
 
 interface MapCanvasProps {
   pois: POI[]
@@ -38,16 +39,54 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
 
   useEffect(() => {
-    const saved = localStorage.getItem('liuli_calibration_points')
-    if (saved) {
-      try {
-        const points = JSON.parse(saved)
+    loadCalibrationPoints()
+  }, [])
+
+  const loadCalibrationPoints = async () => {
+    try {
+      const { data, error } = await supabaseClient.from('calibration_points').select('*')
+      if (error) {
+        console.warn('Failed to load from Supabase, falling back to localStorage:', error)
+        const saved = localStorage.getItem('liuli_calibration_points')
+        if (saved) {
+          try {
+            setCalibrationPoints(JSON.parse(saved))
+          } catch (e) {
+            console.warn('Failed to parse calibration points:', e)
+          }
+        }
+      } else if (data && data.length > 0) {
+        const points = data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          lng: p.lng,
+          lat: p.lat,
+          timestamp: p.timestamp || Date.now(),
+        }))
         setCalibrationPoints(points)
-      } catch (e) {
-        console.warn('Failed to parse calibration points:', e)
+        localStorage.setItem('liuli_calibration_points', JSON.stringify(points))
+      } else {
+        const saved = localStorage.getItem('liuli_calibration_points')
+        if (saved) {
+          try {
+            setCalibrationPoints(JSON.parse(saved))
+          } catch (e) {
+            console.warn('Failed to parse calibration points:', e)
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase load error:', e)
+      const saved = localStorage.getItem('liuli_calibration_points')
+      if (saved) {
+        try {
+          setCalibrationPoints(JSON.parse(saved))
+        } catch (e) {
+          console.warn('Failed to parse calibration points:', e)
+        }
       }
     }
-  }, [])
+  }
 
   useEffect(() => {
     const container = mapContainerRef.current
