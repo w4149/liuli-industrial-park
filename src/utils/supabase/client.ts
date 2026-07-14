@@ -1,16 +1,34 @@
-const env = (typeof window !== 'undefined' && (window as any).__ENV__) || {}
-const supabaseUrl = env.SUPABASE_URL || process.env.SUPABASE_URL || ''
-const supabaseKey = env.SUPABASE_KEY || process.env.SUPABASE_KEY || ''
+const getEnv = () => {
+  if (typeof window !== 'undefined' && (window as any).__ENV__) {
+    return (window as any).__ENV__
+  }
+  return {}
+}
 
-const headers = {
-  'Content-Type': 'application/json',
-  'apikey': supabaseKey,
-  'Authorization': `Bearer ${supabaseKey}`,
+const getSupabaseUrl = () => {
+  const env = getEnv()
+  return env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+}
+
+const getSupabaseKey = () => {
+  const env = getEnv()
+  return env.SUPABASE_KEY || process.env.SUPABASE_KEY || ''
+}
+
+const getHeaders = () => {
+  const supabaseKey = getSupabaseKey()
+  return {
+    'Content-Type': 'application/json',
+    'apikey': supabaseKey,
+    'Authorization': `Bearer ${supabaseKey}`,
+  }
 }
 
 export const supabaseClient = {
   from: (table: string) => ({
     select: async (columns: string = '*') => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}`
       const response = await fetch(url, { headers })
       if (!response.ok) {
@@ -21,6 +39,8 @@ export const supabaseClient = {
     },
 
     selectSingle: async (columns: string = '*') => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}&limit=1`
       const response = await fetch(url, { headers })
       if (!response.ok) {
@@ -32,6 +52,8 @@ export const supabaseClient = {
     },
 
     eq: async (column: string, value: string | number, columns: string = '*') => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}&${column}=eq.${value}`
       const response = await fetch(url, { headers })
       if (!response.ok) {
@@ -42,6 +64,8 @@ export const supabaseClient = {
     },
 
     eqSingle: async (column: string, value: string | number, columns: string = '*') => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}&${column}=eq.${value}&limit=1`
       const response = await fetch(url, { headers })
       if (!response.ok) {
@@ -53,6 +77,8 @@ export const supabaseClient = {
     },
 
     insert: async (values: any[]) => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?select=*`
       const response = await fetch(url, {
         method: 'POST',
@@ -67,6 +93,8 @@ export const supabaseClient = {
     },
 
     update: async (values: any, column: string, value: string | number) => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?${column}=eq.${value}`
       const response = await fetch(url, {
         method: 'PATCH',
@@ -81,6 +109,8 @@ export const supabaseClient = {
     },
 
     delete: async (column: string, value: string | number) => {
+      const supabaseUrl = getSupabaseUrl()
+      const headers = getHeaders()
       const url = `${supabaseUrl}/rest/v1/${table}?${column}=eq.${value}`
       const response = await fetch(url, {
         method: 'DELETE',
