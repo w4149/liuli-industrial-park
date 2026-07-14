@@ -29,26 +29,20 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const [showManualInput, setShowManualInput] = useState(false)
   const [manualLng, setManualLng] = useState('116.3978')
   const [manualLat, setManualLat] = useState('39.9085')
-  const [triggerZone, setTriggerZone] = useState<{ lng: number; lat: number; radius: number } | null>(null)
+  const [calibrationPoints, setCalibrationPoints] = useState<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
   const [isInZone, setIsInZone] = useState(false)
   const [showTriggerText, setShowTriggerText] = useState(false)
+  const [currentZoneName, setCurrentZoneName] = useState('')
   const watchPositionRef = useRef<number | null>(null)
-  const triggerCircleRef = useRef<any>(null)
-  const triggerMarkerRef = useRef<any>(null)
+  const triggerCircleRefs = useRef<Map<string, any>>(new Map())
+  const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
 
   useEffect(() => {
     const saved = localStorage.getItem('liuli_calibration_points')
     if (saved) {
       try {
         const points = JSON.parse(saved)
-        const mountainPoint = points.find((p: any) => p.name === '山上定位')
-        if (mountainPoint) {
-          setTriggerZone({
-            lng: mountainPoint.lng,
-            lat: mountainPoint.lat,
-            radius: 5,
-          })
-        }
+        setCalibrationPoints(points)
       } catch (e) {
         console.warn('Failed to parse calibration points:', e)
       }
@@ -239,43 +233,54 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const drawTriggerZone = () => {
     const map = mapRef.current
     const AMap = aMapRef.current
-    if (!map || !AMap || !triggerZone) return
+    if (!map || !AMap) return
 
-    if (triggerCircleRef.current) {
-      map.remove(triggerCircleRef.current)
-    }
-    if (triggerMarkerRef.current) {
-      map.remove(triggerMarkerRef.current)
-    }
-
-    const circle = new AMap.Circle({
-      center: [triggerZone.lng, triggerZone.lat],
-      radius: triggerZone.radius,
-      strokeColor: '#f093fb',
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-      fillColor: '#f093fb',
-      fillOpacity: 0.2,
-      zIndex: 50,
+    triggerCircleRefs.current.forEach((circle) => {
+      map.remove(circle)
     })
-    map.add(circle)
-    triggerCircleRef.current = circle
+    triggerCircleRefs.current.clear()
 
-    const marker = new AMap.Marker({
-      position: [triggerZone.lng, triggerZone.lat],
-      title: '山上定位',
-      zIndex: 51,
+    triggerMarkerRefs.current.forEach((marker) => {
+      map.remove(marker)
     })
-    marker.setContent('<div style="width:20px;height:20px;border-radius:50%;background:#f093fb;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);">山</div>')
-    map.add(marker)
-    triggerMarkerRef.current = marker
+    triggerMarkerRefs.current.clear()
+
+    const colors = ['#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#667eea', '#fc6c85']
+
+    calibrationPoints.forEach((point, index) => {
+      const color = colors[index % colors.length]
+      const radius = 5
+
+      const circle = new AMap.Circle({
+        center: [point.lng, point.lat],
+        radius: radius,
+        strokeColor: color,
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        fillColor: color,
+        fillOpacity: 0.15,
+        zIndex: 50,
+      })
+      map.add(circle)
+      triggerCircleRefs.current.set(point.id, circle)
+
+      const marker = new AMap.Marker({
+        position: [point.lng, point.lat],
+        title: point.name,
+        zIndex: 51,
+      })
+      const firstChar = point.name.charAt(0)
+      marker.setContent(`<div style="width:22px;height:22px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);">${firstChar}</div>`)
+      map.add(marker)
+      triggerMarkerRefs.current.set(point.id, marker)
+    })
   }
 
   useEffect(() => {
-    if (mapLoaded && triggerZone) {
+    if (mapLoaded && calibrationPoints.length > 0) {
       drawTriggerZone()
     }
-  }, [mapLoaded, triggerZone])
+  }, [mapLoaded, calibrationPoints])
 
   const startWatchingPosition = () => {
     if (watchPositionRef.current) {
@@ -287,18 +292,23 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         const currentLng = position.coords.longitude
         const currentLat = position.coords.latitude
 
-        if (triggerZone) {
-          const distance = calculateDistance(currentLat, currentLng, triggerZone.lat, triggerZone.lng)
-          const wasInZone = isInZone
-          const nowInZone = distance <= triggerZone.radius
-
-          setIsInZone(nowInZone)
-
-          if (nowInZone && !wasInZone) {
-            setShowTriggerText(true)
-          } else if (!nowInZone && wasInZone) {
-            setShowTriggerText(false)
+        let foundZone = null
+        for (const point of calibrationPoints) {
+          const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+          if (distance <= 5) {
+            foundZone = point
+            break
           }
+        }
+
+        if (foundZone && foundZone.name !== currentZoneName) {
+          setCurrentZoneName(foundZone.name)
+          setShowTriggerText(true)
+          setIsInZone(true)
+        } else if (!foundZone && currentZoneName) {
+          setCurrentZoneName('')
+          setShowTriggerText(false)
+          setIsInZone(false)
         }
       },
       (error) => {
@@ -526,7 +536,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
       {showTriggerText && (
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(240,147,251,0.9)', color: '#fff', padding: '15px 30px', borderRadius: '20px', zIndex: 200, textAlign: 'center', fontSize: '18px', fontWeight: 'bold', boxShadow: '0 4px 20px rgba(240,147,251,0.5)', animation: 'pulse 1.5s ease-in-out infinite' }}>
-          🎯 定位测试
+          🎯 {currentZoneName}
         </div>
       )}
 
