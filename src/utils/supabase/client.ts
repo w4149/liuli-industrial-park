@@ -1,5 +1,5 @@
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kogepquzrobmrnfywotk.supabase.co'
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_u3SIM3wcgSmUF8FknrTYlA_SarIxaF8'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
 
 const headers = {
   'Content-Type': 'application/json',

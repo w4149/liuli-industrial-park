@@ -239,6 +239,39 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       return
     }
 
+    setUploadStatus('📍 正在获取最新定位...')
+    
+    const getLatestLocation = () => {
+      return new Promise<void>((resolve) => {
+        if (geolocationRef.current) {
+          geolocationRef.current.getCurrentPosition((status: string, result: any) => {
+            if (status === 'complete' && result.position) {
+              setCurrentLng(result.position.lng)
+              setCurrentLat(result.position.lat)
+            }
+            resolve()
+          })
+        } else if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const lng = position.coords.longitude
+              const lat = position.coords.latitude
+              const converted = wgs84ToGcj02(lng, lat)
+              setCurrentLng(converted.lng)
+              setCurrentLat(converted.lat)
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 3000 }
+          )
+          setTimeout(resolve, 3000)
+        } else {
+          resolve()
+        }
+      })
+    }
+
+    await getLatestLocation()
+
     const newPoint: CalibrationPoint = {
       id: Date.now().toString(),
       name: locationName.trim(),
@@ -252,15 +285,38 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     localStorage.setItem('liuli_calibration_points', JSON.stringify(updatedPoints))
 
     try {
-      await supabaseClient.from('calibration_points').insert([newPoint])
-      setUploadStatus('✅ 上传成功（已同步到云端）')
-    } catch (error) {
-      console.warn('Failed to sync to Supabase:', error)
-      setUploadStatus('✅ 上传成功（本地保存）')
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
+      
+      if (!supabaseUrl || !supabaseKey) {
+        setUploadStatus('⚠️ 环境变量未配置，仅本地保存')
+      } else {
+        const response = await fetch(`${supabaseUrl}/rest/v1/calibration_points?select=*`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify([newPoint]),
+        })
+        
+        if (response.ok) {
+          setUploadStatus('✅ 上传成功（已同步到云端）')
+          console.log('Supabase upload success:', await response.json())
+        } else {
+          const errorData = await response.json().catch(() => ({ message: response.statusText }))
+          console.error('Supabase upload failed:', errorData)
+          setUploadStatus(`⚠️ 云端同步失败: ${errorData.message || response.status}`)
+        }
+      }
+    } catch (error: any) {
+      console.error('Supabase upload error:', error)
+      setUploadStatus(`⚠️ 云端同步失败: ${error.message || '网络错误'}`)
     }
 
     setLocationName('')
-    setTimeout(() => setUploadStatus(''), 2000)
+    setTimeout(() => setUploadStatus(''), 3000)
   }
 
   const handleDeletePoint = async (id: string) => {
