@@ -61,14 +61,16 @@ export default defineConfig({
     },
     webpackChain(chain) {
       chain.resolve.alias.set('@', path.resolve(__dirname, 'src'))
+      const envVars = {
+        NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
+        AMAP_WEB_KEY: process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0',
+        AMAP_SECRET_KEY: process.env.AMAP_SECRET_KEY || '',
+      }
       chain.plugin('define').use(webpack.DefinePlugin, [
         {
-          'process.env': JSON.stringify({
-            NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
-            AMAP_WEB_KEY: process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0',
-            AMAP_SECRET_KEY: process.env.AMAP_SECRET_KEY || '',
-          }),
+          'process.env': JSON.stringify(envVars),
+          'window.__ENV__': JSON.stringify(envVars),
         },
       ])
     },
