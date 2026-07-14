@@ -1,6 +1,9 @@
 import { defineConfig } from '@tarojs/cli'
 import path from 'path'
 import webpack from 'webpack'
+import dotenv from 'dotenv'
+
+dotenv.config({ path: '.env.local' })
 
 export default defineConfig({
   projectName: 'liuli-park',
@@ -10,10 +13,16 @@ export default defineConfig({
   outputRoot: 'dist',
   env: {
     NODE_ENV: process.env.NODE_ENV || 'development',
-    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    SUPABASE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
+    SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kogepquzrobmrnfywotk.supabase.co',
+    SUPABASE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_u3SIM3wcgSmUF8FknrTYlA_SarIxaF8',
     AMAP_WEB_KEY: process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0',
-    AMAP_SECRET_KEY: process.env.AMAP_SECRET_KEY || '',
+    AMAP_SECRET_KEY: process.env.AMAP_SECRET_KEY || 'dde3ac3456c911b38951e739a85f1d93',
+  },
+  defineConstants: {
+    'process.env.SUPABASE_URL': JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kogepquzrobmrnfywotk.supabase.co'),
+    'process.env.SUPABASE_KEY': JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_u3SIM3wcgSmUF8FknrTYlA_SarIxaF8'),
+    'process.env.AMAP_WEB_KEY': JSON.stringify(process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'),
+    'process.env.AMAP_SECRET_KEY': JSON.stringify(process.env.AMAP_SECRET_KEY || 'dde3ac3456c911b38951e739a85f1d93'),
   },
   mini: {
     postcss: {
@@ -61,18 +70,6 @@ export default defineConfig({
     },
     webpackChain(chain) {
       chain.resolve.alias.set('@', path.resolve(__dirname, 'src'))
-      const envVars = {
-        NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
-        AMAP_WEB_KEY: process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0',
-        AMAP_SECRET_KEY: process.env.AMAP_SECRET_KEY || '',
-      }
-      chain.plugin('define').use(webpack.DefinePlugin, [
-        {
-          'process.env': JSON.stringify(envVars),
-          'window.__ENV__': JSON.stringify(envVars),
-        },
-      ])
     },
   },
 })

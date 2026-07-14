@@ -10,7 +10,7 @@
     "dev:weapp": "npx @tarojs/cli build --type weapp --watch",
     "build:weapp": "npx @tarojs/cli build --type weapp",
     "dev:h5": "npx @tarojs/cli build --type h5 --watch",
-    "build:h5": "npx @tarojs/cli build --type h5"
+    "build:h5": "cross-env NEXT_PUBLIC_SUPABASE_URL=https://kogepquzrobmrnfywotk.supabase.co NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_u3SIM3wcgSmUF8FknrTYlA_SarIxaF8 AMAP_WEB_KEY=320106c641e5603dcde8b521a58ee0c0 AMAP_SECRET_KEY=dde3ac3456c911b38951e739a85f1d93 npx @tarojs/cli build --type h5"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
@@ -43,6 +43,8 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "cross-env": "^10.1.0",
+    "dotenv": "^17.4.2",
     "react-refresh": "^0.18.0",
     "sass": "^1.60.0",
     "typescript": "^5.0.0",
