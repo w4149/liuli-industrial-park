@@ -29,6 +29,32 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const [showManualInput, setShowManualInput] = useState(false)
   const [manualLng, setManualLng] = useState('116.3978')
   const [manualLat, setManualLat] = useState('39.9085')
+  const [triggerZone, setTriggerZone] = useState<{ lng: number; lat: number; radius: number } | null>(null)
+  const [isInZone, setIsInZone] = useState(false)
+  const [showTriggerText, setShowTriggerText] = useState(false)
+  const watchPositionRef = useRef<number | null>(null)
+  const triggerCircleRef = useRef<any>(null)
+  const triggerMarkerRef = useRef<any>(null)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('liuli_calibration_points')
+    if (saved) {
+      try {
+        const points = JSON.parse(saved)
+        const mountainPoint = points.find((p: any) => p.name === '山上定位')
+        if (mountainPoint) {
+          setTriggerZone({
+            lng: mountainPoint.lng,
+            lat: mountainPoint.lat,
+            radius: 5,
+          })
+        }
+      } catch (e) {
+        console.warn('Failed to parse calibration points:', e)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const container = mapContainerRef.current
     if (!container || initializedRef.current) return
@@ -199,6 +225,102 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [pois, onPOIClick, customMapUrl, customMapBounds])
 
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 6371000
+    const dLat = ((lat2 - lat1) * Math.PI) / 180
+    const dLng = ((lng2 - lng1) * Math.PI) / 180
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  const drawTriggerZone = () => {
+    const map = mapRef.current
+    const AMap = aMapRef.current
+    if (!map || !AMap || !triggerZone) return
+
+    if (triggerCircleRef.current) {
+      map.remove(triggerCircleRef.current)
+    }
+    if (triggerMarkerRef.current) {
+      map.remove(triggerMarkerRef.current)
+    }
+
+    const circle = new AMap.Circle({
+      center: [triggerZone.lng, triggerZone.lat],
+      radius: triggerZone.radius,
+      strokeColor: '#f093fb',
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      fillColor: '#f093fb',
+      fillOpacity: 0.2,
+      zIndex: 50,
+    })
+    map.add(circle)
+    triggerCircleRef.current = circle
+
+    const marker = new AMap.Marker({
+      position: [triggerZone.lng, triggerZone.lat],
+      title: '山上定位',
+      zIndex: 51,
+    })
+    marker.setContent('<div style="width:20px;height:20px;border-radius:50%;background:#f093fb;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);">山</div>')
+    map.add(marker)
+    triggerMarkerRef.current = marker
+  }
+
+  useEffect(() => {
+    if (mapLoaded && triggerZone) {
+      drawTriggerZone()
+    }
+  }, [mapLoaded, triggerZone])
+
+  const startWatchingPosition = () => {
+    if (watchPositionRef.current) {
+      navigator.geolocation.clearWatch(watchPositionRef.current)
+    }
+
+    watchPositionRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const currentLng = position.coords.longitude
+        const currentLat = position.coords.latitude
+
+        if (triggerZone) {
+          const distance = calculateDistance(currentLat, currentLng, triggerZone.lat, triggerZone.lng)
+          const wasInZone = isInZone
+          const nowInZone = distance <= triggerZone.radius
+
+          setIsInZone(nowInZone)
+
+          if (nowInZone && !wasInZone) {
+            setShowTriggerText(true)
+          } else if (!nowInZone && wasInZone) {
+            setShowTriggerText(false)
+          }
+        }
+      },
+      (error) => {
+        console.warn('Watch position error:', error)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 1000,
+      }
+    )
+  }
+
+  useEffect(() => {
+    return () => {
+      if (watchPositionRef.current) {
+        navigator.geolocation.clearWatch(watchPositionRef.current)
+        watchPositionRef.current = null
+      }
+    }
+  }, [])
+
   const handleLocationSuccess = (lng: number, lat: number) => {
     const map = mapRef.current
     if (!map) return
@@ -228,6 +350,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
     map.add(userMarker)
     userMarkerRef.current = userMarker
+
+    startWatchingPosition()
   }
 
   const handleLocate = () => {
@@ -397,6 +521,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           >
             📍 定位
           </button>
+        </div>
+      )}
+
+      {showTriggerText && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(240,147,251,0.9)', color: '#fff', padding: '15px 30px', borderRadius: '20px', zIndex: 200, textAlign: 'center', fontSize: '18px', fontWeight: 'bold', boxShadow: '0 4px 20px rgba(240,147,251,0.5)', animation: 'pulse 1.5s ease-in-out infinite' }}>
+          🎯 定位测试
         </div>
       )}
 
