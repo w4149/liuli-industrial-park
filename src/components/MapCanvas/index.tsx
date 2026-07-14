@@ -94,8 +94,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     initializedRef.current = true
 
-    const amapKey = process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'
-    const securityJsCode = process.env.AMAP_SECRET_KEY || ''
+    const env = (window as any).__ENV__ || {}
+    const amapKey = env.AMAP_WEB_KEY || process.env.AMAP_WEB_KEY || '320106c641e5603dcde8b521a58ee0c0'
+    const securityJsCode = env.AMAP_SECRET_KEY || process.env.AMAP_SECRET_KEY || ''
 
     if (securityJsCode) {
       ;(window as any)._AMapSecurityConfig = {
@@ -420,7 +421,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       setIsLocating(false)
       setLocationStatus('failed')
       
-      if (!process.env.AMAP_SECRET_KEY) {
+      const env = (window as any).__ENV__ || {}
+      if (!env.AMAP_SECRET_KEY && !process.env.AMAP_SECRET_KEY) {
         console.warn('⚠️ AMAP_SECRET_KEY is not configured. Geolocation may fail in production.')
       }
     }

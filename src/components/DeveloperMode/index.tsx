@@ -285,8 +285,9 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     localStorage.setItem('liuli_calibration_points', JSON.stringify(updatedPoints))
 
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
+      const env = (window as any).__ENV__ || {}
+      const supabaseUrl = env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const supabaseKey = env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
       
       if (!supabaseUrl || !supabaseKey) {
         setUploadStatus('⚠️ 环境变量未配置，仅本地保存')
