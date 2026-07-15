@@ -320,7 +320,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
             'Content-Type': 'application/json',
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`,
-            'Prefer': 'return=representation',
+            'Prefer': 'return=minimal',
           },
           body: JSON.stringify(newPoint),
         })
