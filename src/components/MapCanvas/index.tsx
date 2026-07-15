@@ -546,10 +546,15 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       (error) => {
         console.warn('Watch position error:', error)
         setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'watch error: ' + error.code }))
+        if (error.code === 3) {
+          setTimeout(() => {
+            startWatchingPosition()
+          }, 5000)
+        }
       },
       {
-        enableHighAccuracy: true,
-        timeout: 3000,
+        enableHighAccuracy: false,
+        timeout: 10000,
         maximumAge: 0,
       }
     )
@@ -634,8 +639,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             console.warn('Interval location update error:', error)
           },
           {
-            enableHighAccuracy: true,
-            timeout: 3000,
+            enableHighAccuracy: false,
+            timeout: 10000,
             maximumAge: 0,
           }
         )
