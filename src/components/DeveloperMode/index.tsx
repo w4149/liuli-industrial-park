@@ -305,11 +305,28 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
         
         if (response.ok) {
           setUploadStatus('✅ 上传成功（已同步到云端）')
-          console.log('Supabase upload success:', await response.json())
+          try {
+            const result = await response.json()
+            console.log('Supabase upload success:', result)
+          } catch (e) {
+            console.log('Supabase upload success (no JSON response)')
+          }
         } else {
-          const errorData = await response.json().catch(() => ({ message: response.statusText }))
-          console.error('Supabase upload failed:', errorData)
-          setUploadStatus(`⚠️ 云端同步失败: ${errorData.message || response.status}`)
+          let errorData: any = { message: response.statusText }
+          try {
+            const text = await response.text()
+            if (text) {
+              try {
+                errorData = JSON.parse(text)
+              } catch (e) {
+                errorData = { message: text }
+              }
+            }
+          } catch (e) {
+            errorData = { message: response.statusText }
+          }
+          console.error('Supabase upload failed:', errorData, 'status:', response.status)
+          setUploadStatus(`⚠️ 云端同步失败: ${errorData.message || errorData.details || response.status}`)
         }
       }
     } catch (error: any) {
