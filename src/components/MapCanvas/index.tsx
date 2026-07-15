@@ -324,9 +324,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
   const getTriggerRadius = () => {
     if (currentAccuracy !== null) {
-      return Math.max(5, Math.floor(currentAccuracy / 2))
+      return Math.max(15, Math.floor(currentAccuracy * 1.5))
     }
-    return 10
+    return 20
   }
 
   const drawTriggerZone = () => {
@@ -486,14 +486,18 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       map.setZoom(18)
     }
 
-    const userMarker = new (window as any).AMap.Marker({
-      position: userPos,
-      title: '我的位置',
-      zIndex: 1000,
-    })
-    userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
-    map.add(userMarker)
-    userMarkerRef.current = userMarker
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setPosition(userPos)
+    } else {
+      const userMarker = new (window as any).AMap.Marker({
+        position: userPos,
+        title: '我的位置',
+        zIndex: 1000,
+      })
+      userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
+      map.add(userMarker)
+      userMarkerRef.current = userMarker
+    }
 
     startWatchingPosition()
   }
