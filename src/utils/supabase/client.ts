@@ -32,10 +32,31 @@ export const supabaseClient = {
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}`
       const response = await fetch(url, { headers })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Request failed' }))
+        let error = { message: 'Request failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Select failed')
       }
-      return { data: await response.json(), error: null }
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
+      return { data, error: null }
     },
 
     selectSingle: async (columns: string = '*') => {
@@ -44,10 +65,30 @@ export const supabaseClient = {
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}&limit=1`
       const response = await fetch(url, { headers })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Request failed' }))
+        let error = { message: 'Request failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Select failed')
       }
-      const data = await response.json()
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
       return { data: data[0] || null, error: null }
     },
 
@@ -57,10 +98,31 @@ export const supabaseClient = {
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}&${column}=eq.${value}`
       const response = await fetch(url, { headers })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Request failed' }))
+        let error = { message: 'Request failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Query failed')
       }
-      return { data: await response.json(), error: null }
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
+      return { data, error: null }
     },
 
     eqSingle: async (column: string, value: string | number, columns: string = '*') => {
@@ -69,10 +131,30 @@ export const supabaseClient = {
       const url = `${supabaseUrl}/rest/v1/${table}?${columns === '*' ? '' : `select=${encodeURIComponent(columns)}`}&${column}=eq.${value}&limit=1`
       const response = await fetch(url, { headers })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Request failed' }))
+        let error = { message: 'Request failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Query failed')
       }
-      const data = await response.json()
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
       return { data: data[0] || null, error: null }
     },
 
@@ -86,10 +168,31 @@ export const supabaseClient = {
         body: JSON.stringify(values),
       })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Insert failed' }))
+        let error = { message: 'Insert failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Insert failed')
       }
-      return { data: await response.json(), error: null }
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
+      return { data, error: null }
     },
 
     update: async (values: any, column: string, value: string | number) => {
@@ -102,10 +205,31 @@ export const supabaseClient = {
         body: JSON.stringify(values),
       })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Update failed' }))
+        let error = { message: 'Update failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Update failed')
       }
-      return { data: await response.json(), error: null }
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
+      return { data, error: null }
     },
 
     delete: async (column: string, value: string | number) => {
@@ -117,10 +241,31 @@ export const supabaseClient = {
         headers,
       })
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Delete failed' }))
+        let error = { message: 'Delete failed' }
+        try {
+          const text = await response.text()
+          if (text) {
+            try {
+              error = JSON.parse(text)
+            } catch (e) {
+              error = { message: text }
+            }
+          }
+        } catch (e) {
+          error = { message: response.statusText }
+        }
         throw new Error(error.message || 'Delete failed')
       }
-      return { data: await response.json(), error: null }
+      let data: any[] = []
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        console.warn('Failed to parse response JSON:', e)
+      }
+      return { data, error: null }
     },
   }),
 }
