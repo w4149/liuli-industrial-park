@@ -652,7 +652,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         </div>
       )}
 
-      {mapLoaded && locationStatus === 'idle' && (
+      {mapLoaded && locationStatus !== 'failed' && !showManualInput && (
         <div style={{ position: 'absolute', bottom: '20px', right: '20px', display: 'flex', gap: '10px' }}>
           <button
             onClick={() => setShowManualInput(true)}
@@ -664,7 +664,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             onClick={handleLocate}
             style={{ background: '#667eea', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '20px', fontSize: '14px', cursor: 'pointer', zIndex: 100, boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
           >
-            📍 定位
+            📍 {locationStatus === 'success' ? '重新定位' : '定位'}
           </button>
         </div>
       )}
