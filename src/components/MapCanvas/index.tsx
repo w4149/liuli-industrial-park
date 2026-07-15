@@ -39,10 +39,15 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
+  const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
 
   useEffect(() => {
     loadCalibrationPoints()
   }, [])
+
+  useEffect(() => {
+    calibrationPointsRef.current = calibrationPoints
+  }, [calibrationPoints])
 
   const loadCalibrationPoints = async () => {
     try {
@@ -156,35 +161,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         })
         mapRef.current = map
 
-        if (customMapUrl && customMapBounds) {
-          const img = new Image()
-          img.onload = () => {
-            const groundImage = new AMap.GroundImage(customMapUrl, [
-              new AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
-              new AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1]),
-            ], {
-              opacity: 1,
-              zooms: [15, 20],
-            })
-            map.add(groundImage)
-            groundImageRef.current = groundImage
-            
-            const bounds = new AMap.Bounds(
-              new AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
-              new AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1])
-            )
-            map.setBounds(bounds, true, [50, 50, 50, 50])
-            
-            setCustomMapLoaded(true)
-          }
-          img.onerror = () => {
-            console.warn('Custom map image load failed')
-            setCustomMapLoaded(true)
-          }
-          img.src = customMapUrl
-        } else {
-          setCustomMapLoaded(true)
-        }
+        setCustomMapLoaded(true)
 
         const poiColors: Record<string, string> = {
           exhibit: '#667eea',
@@ -273,7 +250,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       setLocationStatus('idle')
       initializedRef.current = false
     }
-  }, [pois, onPOIClick, customMapUrl, customMapBounds])
+  }, [pois, onPOIClick])
 
   const wgs84ToGcj02 = (lng: number, lat: number) => {
     const PI = Math.PI
@@ -381,6 +358,43 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [mapLoaded, calibrationPoints])
 
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !aMapRef.current) return
+
+    const map = mapRef.current
+    const AMap = aMapRef.current
+
+    if (groundImageRef.current) {
+      map.remove(groundImageRef.current)
+      groundImageRef.current = null
+    }
+
+    if (customMapUrl && customMapBounds) {
+      const img = new Image()
+      img.onload = () => {
+        const groundImage = new AMap.GroundImage(customMapUrl, [
+          new AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
+          new AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1]),
+        ], {
+          opacity: 1,
+          zooms: [15, 20],
+        })
+        map.add(groundImage)
+        groundImageRef.current = groundImage
+
+        const bounds = new AMap.Bounds(
+          new AMap.LngLat(customMapBounds.sw[0], customMapBounds.sw[1]),
+          new AMap.LngLat(customMapBounds.ne[0], customMapBounds.ne[1])
+        )
+        map.setBounds(bounds, true, [50, 50, 50, 50])
+      }
+      img.onerror = () => {
+        console.warn('Custom map image load failed')
+      }
+      img.src = customMapUrl
+    }
+  }, [customMapUrl, customMapBounds, mapLoaded])
+
   const startWatchingPosition = () => {
     if (watchPositionRef.current) {
       navigator.geolocation.clearWatch(watchPositionRef.current)
@@ -408,8 +422,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           calibrationPointsCount: calibrationPoints.length,
         })
 
+        const points = calibrationPointsRef.current
         let foundZone = null
-        for (const point of calibrationPoints) {
+        for (const point of points) {
           const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
           console.log(`[MapCanvas] Distance to '${point.name}': ${distance.toFixed(1)}m (triggerRadius: ${triggerRadius}m)`)
           if (distance <= triggerRadius) {
@@ -429,7 +444,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         } else if (currentZoneName) {
           const leaveThreshold = triggerRadius + 5
           let isStillInAnyZone = false
-          for (const point of calibrationPoints) {
+          for (const point of points) {
             const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
             if (distance <= leaveThreshold) {
               isStillInAnyZone = true
