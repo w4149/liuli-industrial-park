@@ -35,6 +35,22 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const [showTriggerText, setShowTriggerText] = useState(false)
   const [currentZoneName, setCurrentZoneName] = useState('')
   const [currentAccuracy, setCurrentAccuracy] = useState<number | null>(null)
+  const [currentCoords, setCurrentCoords] = useState<{ lng: string; lat: string } | null>(null)
+  const [debugInfo, setDebugInfo] = useState<{
+    watchRunning: boolean
+    pointsCount: number
+    triggerRadius: number
+    nearestPoint: string | null
+    nearestDistance: number | null
+    lastUpdate: number | null
+  }>({
+    watchRunning: false,
+    pointsCount: 0,
+    triggerRadius: 0,
+    nearestPoint: null,
+    nearestDistance: null,
+    lastUpdate: null,
+  })
   const watchPositionRef = useRef<number | null>(null)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
@@ -400,6 +416,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       navigator.geolocation.clearWatch(watchPositionRef.current)
     }
 
+    setDebugInfo(prev => ({ ...prev, watchRunning: true }))
+
     watchPositionRef.current = navigator.geolocation.watchPosition(
       (position) => {
         const wgs84Lng = position.coords.longitude
@@ -411,27 +429,35 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         const currentLat = gcj02.lat
 
         setCurrentAccuracy(accuracy)
+        setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
 
         const triggerRadius = getTriggerRadius()
-
-        console.log('[MapCanvas] Position update:', {
-          wgs84: { lng: wgs84Lng.toFixed(6), lat: wgs84Lat.toFixed(6) },
-          gcj02: { lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) },
-          accuracy,
-          triggerRadius,
-          calibrationPointsCount: calibrationPoints.length,
-        })
-
         const points = calibrationPointsRef.current
+
+        let nearestPoint = null
+        let nearestDistance = Infinity
+
         let foundZone = null
         for (const point of points) {
           const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
-          console.log(`[MapCanvas] Distance to '${point.name}': ${distance.toFixed(1)}m (triggerRadius: ${triggerRadius}m)`)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearestPoint = point.name
+          }
           if (distance <= triggerRadius) {
             foundZone = point
             break
           }
         }
+
+        setDebugInfo({
+          watchRunning: true,
+          pointsCount: points.length,
+          triggerRadius,
+          nearestPoint,
+          nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
+          lastUpdate: Date.now(),
+        })
 
         if (foundZone) {
           console.log(`[MapCanvas] Entering zone: ${foundZone.name}`)
@@ -480,14 +506,24 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [])
 
-  const handleLocationSuccess = (lng: number, lat: number) => {
+  const handleLocationSuccess = (lng: number, lat: number, source: string = 'native') => {
     const map = mapRef.current
     if (!map) return
 
     setIsLocating(false)
     setLocationStatus('success')
 
-    const userPos = [lng, lat]
+    let gcj02Lng = lng
+    let gcj02Lat = lat
+    if (source === 'native') {
+      const gcj02 = wgs84ToGcj02(lng, lat)
+      gcj02Lng = gcj02.lng
+      gcj02Lat = gcj02.lat
+    }
+
+    const userPos = [gcj02Lng, gcj02Lat]
+
+    setCurrentCoords({ lng: gcj02Lng.toFixed(6), lat: gcj02Lat.toFixed(6) })
 
     if (customMapBounds) {
       const bounds = new (window as any).AMap.Bounds(
@@ -608,17 +644,17 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
 
     tryNativeGeolocation()
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat))
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'native'))
       .catch((nativeError) => {
         console.warn('Native geolocation failed, trying Taro...', nativeError)
         return tryTaroGeolocation()
       })
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat))
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'taro'))
       .catch((taroError) => {
         console.warn('Taro geolocation failed, trying AMap...', taroError)
         return tryAmapGeolocation()
       })
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat))
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'amap'))
       .catch(failCallback)
   }
 
@@ -685,6 +721,21 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           >
             📍 {locationStatus === 'success' ? '重新定位' : '定位'}
           </button>
+        </div>
+      )}
+
+      {currentCoords && (
+        <div style={{ position: 'absolute', top: '10px', left: '10px', background: 'rgba(255,255,255,0.8)', color: '#666', padding: '4px 8px', borderRadius: '6px', zIndex: 150, fontSize: '10px', fontFamily: 'monospace', pointerEvents: 'none' }}>
+          {currentCoords.lng}, {currentCoords.lat}
+        </div>
+      )}
+
+      {locationStatus === 'success' && (
+        <div style={{ position: 'absolute', bottom: '80px', left: '10px', background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '6px 10px', borderRadius: '8px', zIndex: 150, fontSize: '10px', pointerEvents: 'none' }}>
+          <div>📍 点: {debugInfo.pointsCount}</div>
+          <div>🔴 半径: {debugInfo.triggerRadius}m</div>
+          <div>📏 最近: {debugInfo.nearestPoint || '-'} ({debugInfo.nearestDistance || '-'}m)</div>
+          <div>⏱️ {debugInfo.watchRunning ? '运行中' : '已停止'}</div>
         </div>
       )}
 
