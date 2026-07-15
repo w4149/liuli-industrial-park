@@ -252,18 +252,36 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
             resolve()
           })
         } else if (navigator.geolocation) {
+          let resolved = false
+          const timer = setTimeout(() => {
+            if (!resolved) {
+              resolved = true
+              resolve()
+            }
+          }, 3000)
+          
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              const lng = position.coords.longitude
-              const lat = position.coords.latitude
-              const converted = wgs84ToGcj02(lng, lat)
-              setCurrentLng(converted.lng)
-              setCurrentLat(converted.lat)
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timer)
+                const lng = position.coords.longitude
+                const lat = position.coords.latitude
+                const converted = wgs84ToGcj02(lng, lat)
+                setCurrentLng(converted.lng)
+                setCurrentLat(converted.lat)
+              }
+              resolve()
             },
-            () => {},
+            () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timer)
+              }
+              resolve()
+            },
             { enableHighAccuracy: true, timeout: 3000 }
           )
-          setTimeout(resolve, 3000)
         } else {
           resolve()
         }
@@ -310,7 +328,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
         console.log('Response status:', response.status)
         console.log('Response ok:', response.ok)
         
-        if (response.ok) {
+        if (response.status >= 200 && response.status < 300) {
           setUploadStatus('✅ 上传成功（已同步到云端）')
           try {
             const text = await response.text()
