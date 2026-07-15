@@ -292,6 +292,10 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       if (!supabaseUrl || !supabaseKey) {
         setUploadStatus('⚠️ 环境变量未配置，仅本地保存')
       } else {
+        console.log('Starting Supabase upload...')
+        console.log('Supabase URL:', supabaseUrl)
+        console.log('Data to upload:', newPoint)
+        
         const response = await fetch(`${supabaseUrl}/rest/v1/calibration_points`, {
           method: 'POST',
           headers: {
@@ -303,18 +307,32 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           body: JSON.stringify(newPoint),
         })
         
+        console.log('Response status:', response.status)
+        console.log('Response ok:', response.ok)
+        
         if (response.ok) {
           setUploadStatus('✅ 上传成功（已同步到云端）')
           try {
-            const result = await response.json()
-            console.log('Supabase upload success:', result)
+            const text = await response.text()
+            console.log('Response text:', text)
+            if (text) {
+              try {
+                const result = JSON.parse(text)
+                console.log('Supabase upload success (JSON):', result)
+              } catch (e) {
+                console.log('Supabase upload success (non-JSON response):', text)
+              }
+            } else {
+              console.log('Supabase upload success (empty response)')
+            }
           } catch (e) {
-            console.log('Supabase upload success (no JSON response)')
+            console.log('Supabase upload success (response processing error):', e)
           }
         } else {
           let errorData: any = { message: response.statusText }
           try {
             const text = await response.text()
+            console.log('Error response text:', text)
             if (text) {
               try {
                 errorData = JSON.parse(text)
@@ -330,7 +348,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
         }
       }
     } catch (error: any) {
-      console.error('Supabase upload error:', error)
+      console.error('Supabase upload error (catch block):', error)
       setUploadStatus(`⚠️ 云端同步失败: ${error.message || '网络错误'}`)
     }
 
