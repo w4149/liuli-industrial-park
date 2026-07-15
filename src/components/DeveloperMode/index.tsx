@@ -292,14 +292,15 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       if (!supabaseUrl || !supabaseKey) {
         setUploadStatus('⚠️ 环境变量未配置，仅本地保存')
       } else {
-        const response = await fetch(`${supabaseUrl}/rest/v1/calibration_points?select=*`, {
+        const response = await fetch(`${supabaseUrl}/rest/v1/calibration_points`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`,
+            'Prefer': 'return=representation',
           },
-          body: JSON.stringify([newPoint]),
+          body: JSON.stringify(newPoint),
         })
         
         if (response.ok) {
