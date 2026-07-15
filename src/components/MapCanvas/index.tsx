@@ -261,6 +261,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         map.on('complete', () => {
           setTimeout(() => {
             setMapLoaded(true)
+            handleLocate()
           }, 500)
         })
       })
