@@ -36,6 +36,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const [currentZoneName, setCurrentZoneName] = useState('')
   const [currentAccuracy, setCurrentAccuracy] = useState<number | null>(null)
   const [currentCoords, setCurrentCoords] = useState<{ lng: string; lat: string } | null>(null)
+  const kalmanRef = useRef<{ lng: number; lat: number; variance: number } | null>(null)
   const [debugInfo, setDebugInfo] = useState<{
     watchRunning: boolean
     pointsCount: number
@@ -345,6 +346,27 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     return 20
   }
 
+  const kalmanFilter = (lng: number, lat: number, accuracy: number) => {
+    const R = accuracy * accuracy
+
+    if (!kalmanRef.current) {
+      kalmanRef.current = { lng, lat, variance: R }
+      return { lng, lat }
+    }
+
+    const k = kalmanRef.current
+    const varianceDelta = 3
+
+    k.variance += varianceDelta
+
+    const kalmanGain = k.variance / (k.variance + R)
+    k.lng += kalmanGain * (lng - k.lng)
+    k.lat += kalmanGain * (lat - k.lat)
+    k.variance *= (1 - kalmanGain)
+
+    return { lng: k.lng, lat: k.lat }
+  }
+
   const drawTriggerZone = () => {
     const map = mapRef.current
     const AMap = aMapRef.current
@@ -448,11 +470,19 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         const accuracy = position.coords.accuracy
 
         const gcj02 = wgs84ToGcj02(wgs84Lng, wgs84Lat)
-        const currentLng = gcj02.lng
-        const currentLat = gcj02.lat
+        const rawLng = gcj02.lng
+        const rawLat = gcj02.lat
+
+        const filtered = kalmanFilter(rawLng, rawLat, accuracy)
+        const currentLng = filtered.lng
+        const currentLat = filtered.lat
 
         setCurrentAccuracy(accuracy)
         setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
+
+        if (userMarkerRef.current) {
+          userMarkerRef.current.setPosition([currentLng, currentLat])
+        }
 
         const triggerRadius = getTriggerRadius()
         const points = calibrationPointsRef.current
@@ -483,7 +513,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         })
 
         if (foundZone) {
-          console.log(`[MapCanvas] Entering zone: ${foundZone.name}`)
           if (foundZone.name !== currentZoneName) {
             setCurrentZoneName(foundZone.name)
             setShowTriggerText(true)
@@ -501,7 +530,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             }
           }
           if (!isStillInAnyZone) {
-            console.log(`[MapCanvas] Leaving zone: ${currentZoneName}`)
             setCurrentZoneName('')
             setShowTriggerText(false)
             setIsInZone(false)
