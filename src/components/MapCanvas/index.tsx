@@ -43,6 +43,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     nearestPoint: string | null
     nearestDistance: number | null
     lastUpdate: number | null
+    loadStatus: string
+    supabaseUrl: string
   }>({
     watchRunning: false,
     pointsCount: 0,
@@ -50,6 +52,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     nearestPoint: null,
     nearestDistance: null,
     lastUpdate: null,
+    loadStatus: 'loading',
+    supabaseUrl: '',
   })
   const watchPositionRef = useRef<number | null>(null)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
@@ -69,28 +73,39 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     try {
       const env = (window as any).__ENV__ || {}
       const supabaseUrl = env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+      
+      setDebugInfo(prev => ({ ...prev, supabaseUrl: supabaseUrl ? 'configured' : 'not set', loadStatus: 'checking' }))
+      
       if (!supabaseUrl) {
-        console.warn('SUPABASE_URL is not configured, skipping Supabase load')
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'no url' }))
         const saved = localStorage.getItem('liuli_calibration_points')
         if (saved) {
           try {
-            setCalibrationPoints(JSON.parse(saved))
+            const points = JSON.parse(saved)
+            setCalibrationPoints(points)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'localStorage', pointsCount: points.length }))
           } catch (e) {
-            console.warn('Failed to parse calibration points:', e)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'parse error' }))
           }
+        } else {
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'no data' }))
         }
         return
       }
       const { data, error } = await supabaseClient.from('calibration_points').select('*')
       if (error) {
-        console.warn('Failed to load from Supabase, falling back to localStorage:', error)
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'supabase error' }))
         const saved = localStorage.getItem('liuli_calibration_points')
         if (saved) {
           try {
-            setCalibrationPoints(JSON.parse(saved))
+            const points = JSON.parse(saved)
+            setCalibrationPoints(points)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'fallback', pointsCount: points.length }))
           } catch (e) {
-            console.warn('Failed to parse calibration points:', e)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'fallback error' }))
           }
+        } else {
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'no fallback' }))
         }
       } else if (data && data.length > 0) {
         const points = data.map((p: any) => ({
@@ -102,24 +117,32 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         }))
         setCalibrationPoints(points)
         localStorage.setItem('liuli_calibration_points', JSON.stringify(points))
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'success', pointsCount: points.length }))
       } else {
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'empty data' }))
         const saved = localStorage.getItem('liuli_calibration_points')
         if (saved) {
           try {
-            setCalibrationPoints(JSON.parse(saved))
+            const points = JSON.parse(saved)
+            setCalibrationPoints(points)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'localStorage', pointsCount: points.length }))
           } catch (e) {
-            console.warn('Failed to parse calibration points:', e)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'localStorage error' }))
           }
+        } else {
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'no data at all' }))
         }
       }
     } catch (e) {
-      console.warn('Supabase load error:', e)
+      setDebugInfo(prev => ({ ...prev, loadStatus: 'catch error' }))
       const saved = localStorage.getItem('liuli_calibration_points')
       if (saved) {
         try {
-          setCalibrationPoints(JSON.parse(saved))
+          const points = JSON.parse(saved)
+          setCalibrationPoints(points)
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'catch fallback', pointsCount: points.length }))
         } catch (e) {
-          console.warn('Failed to parse calibration points:', e)
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'catch error' }))
         }
       }
     }
@@ -736,6 +759,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           <div>🔴 半径: {debugInfo.triggerRadius}m</div>
           <div>📏 最近: {debugInfo.nearestPoint || '-'} ({debugInfo.nearestDistance || '-'}m)</div>
           <div>⏱️ {debugInfo.watchRunning ? '运行中' : '已停止'}</div>
+          <div style={{ marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '4px' }}>
+            <div>📦 状态: {debugInfo.loadStatus}</div>
+            <div>🔗 URL: {debugInfo.supabaseUrl}</div>
+          </div>
         </div>
       )}
 
