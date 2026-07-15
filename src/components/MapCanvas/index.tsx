@@ -511,6 +511,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       },
       (error) => {
         console.warn('Watch position error:', error)
+        setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'watch error: ' + error.code }))
       },
       {
         enableHighAccuracy: true,
@@ -571,6 +572,39 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
       map.add(userMarker)
       userMarkerRef.current = userMarker
+    }
+
+    const points = calibrationPointsRef.current
+    const triggerRadius = getTriggerRadius()
+    let nearestPoint = null
+    let nearestDistance = Infinity
+    let foundZone = null
+
+    for (const point of points) {
+      const distance = calculateDistance(gcj02Lat, gcj02Lng, point.lat, point.lng)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestPoint = point.name
+      }
+      if (distance <= triggerRadius) {
+        foundZone = point
+        break
+      }
+    }
+
+    setDebugInfo(prev => ({
+      ...prev,
+      triggerRadius,
+      nearestPoint,
+      nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
+      pointsCount: points.length,
+    }))
+
+    if (foundZone) {
+      setCurrentZoneName(foundZone.name)
+      setShowTriggerText(true)
+      setIsInZone(true)
+      lastTriggeredZoneRef.current = foundZone.name
     }
 
     startWatchingPosition()
