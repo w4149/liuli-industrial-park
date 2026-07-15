@@ -57,6 +57,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     supabaseUrl: '',
   })
   const watchPositionRef = useRef<number | null>(null)
+  const intervalRef = useRef<number | null>(null)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
@@ -461,6 +462,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     if (watchPositionRef.current) {
       navigator.geolocation.clearWatch(watchPositionRef.current)
     }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+    }
 
     setDebugInfo(prev => ({ ...prev, watchRunning: true }))
 
@@ -544,10 +548,98 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       },
       {
         enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 1000,
+        timeout: 3000,
+        maximumAge: 0,
       }
     )
+
+    intervalRef.current = window.setInterval(() => {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const wgs84Lng = position.coords.longitude
+            const wgs84Lat = position.coords.latitude
+            const accuracy = position.coords.accuracy
+
+            const gcj02 = wgs84ToGcj02(wgs84Lng, wgs84Lat)
+            const rawLng = gcj02.lng
+            const rawLat = gcj02.lat
+
+            const filtered = kalmanFilter(rawLng, rawLat, accuracy)
+            const currentLng = filtered.lng
+            const currentLat = filtered.lat
+
+            setCurrentAccuracy(accuracy)
+            setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
+
+            if (userMarkerRef.current) {
+              userMarkerRef.current.setPosition([currentLng, currentLat])
+            }
+
+            const triggerRadius = getTriggerRadius()
+            const points = calibrationPointsRef.current
+
+            let nearestPoint = null
+            let nearestDistance = Infinity
+            let foundZone = null
+
+            for (const point of points) {
+              const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+              if (distance < nearestDistance) {
+                nearestDistance = distance
+                nearestPoint = point.name
+              }
+              if (distance <= triggerRadius) {
+                foundZone = point
+                break
+              }
+            }
+
+            setDebugInfo({
+              watchRunning: true,
+              pointsCount: points.length,
+              triggerRadius,
+              nearestPoint,
+              nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
+              lastUpdate: Date.now(),
+            })
+
+            if (foundZone) {
+              if (foundZone.name !== currentZoneName) {
+                setCurrentZoneName(foundZone.name)
+                setShowTriggerText(true)
+                setIsInZone(true)
+                lastTriggeredZoneRef.current = foundZone.name
+              }
+            } else if (currentZoneName) {
+              const leaveThreshold = triggerRadius + 5
+              let isStillInAnyZone = false
+              for (const point of points) {
+                const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+                if (distance <= leaveThreshold) {
+                  isStillInAnyZone = true
+                  break
+                }
+              }
+              if (!isStillInAnyZone) {
+                setCurrentZoneName('')
+                setShowTriggerText(false)
+                setIsInZone(false)
+                lastTriggeredZoneRef.current = null
+              }
+            }
+          },
+          (error) => {
+            console.warn('Interval location update error:', error)
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 3000,
+            maximumAge: 0,
+          }
+        )
+      }
+    }, 3000)
   }
 
   useEffect(() => {
@@ -555,6 +647,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (watchPositionRef.current) {
         navigator.geolocation.clearWatch(watchPositionRef.current)
         watchPositionRef.current = null
+      }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
       }
     }
   }, [])
@@ -676,9 +772,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
               reject({ source: 'native', error })
             },
             {
-              enableHighAccuracy: false,
-              timeout: 8000,
-              maximumAge: 300000,
+              enableHighAccuracy: true,
+              timeout: 5000,
+              maximumAge: 0,
             }
           )
         } else {
