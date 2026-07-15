@@ -58,6 +58,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   })
   const watchPositionRef = useRef<number | null>(null)
   const intervalRef = useRef<number | null>(null)
+  const retryTimerIdRef = useRef<number | null>(null)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
@@ -466,6 +467,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
     }
+    if (retryTimerIdRef.current) {
+      clearTimeout(retryTimerIdRef.current)
+      retryTimerIdRef.current = null
+    }
 
     setDebugInfo(prev => ({ ...prev, watchRunning: true }))
 
@@ -509,6 +514,11 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           }
         }
 
+        if (retryTimerIdRef.current) {
+          clearTimeout(retryTimerIdRef.current)
+          retryTimerIdRef.current = null
+        }
+
         setDebugInfo({
           watchRunning: true,
           pointsCount: points.length,
@@ -546,8 +556,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       (error) => {
         console.warn('Watch position error:', error)
         setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'watch error: ' + error.code }))
-        if (error.code === 3) {
-          setTimeout(() => {
+        if (error.code === 3 && !retryTimerIdRef.current) {
+          retryTimerIdRef.current = window.setTimeout(() => {
+            retryTimerIdRef.current = null
             startWatchingPosition()
           }, 5000)
         }
@@ -657,6 +668,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
+      }
+      if (retryTimerIdRef.current) {
+        clearTimeout(retryTimerIdRef.current)
+        retryTimerIdRef.current = null
       }
     }
   }, [])
