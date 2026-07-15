@@ -34,9 +34,11 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const [isInZone, setIsInZone] = useState(false)
   const [showTriggerText, setShowTriggerText] = useState(false)
   const [currentZoneName, setCurrentZoneName] = useState('')
+  const [currentAccuracy, setCurrentAccuracy] = useState<number | null>(null)
   const watchPositionRef = useRef<number | null>(null)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
+  const lastTriggeredZoneRef = useRef<string | null>(null)
 
   useEffect(() => {
     loadCalibrationPoints()
@@ -273,6 +275,42 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [pois, onPOIClick, customMapUrl, customMapBounds])
 
+  const wgs84ToGcj02 = (lng: number, lat: number) => {
+    const PI = Math.PI
+    const a = 6378245.0
+    const ee = 0.00669342162296594323
+
+    const transformLat = (x: number, y: number) => {
+      let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+      ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0
+      ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0
+      ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0
+      return ret
+    }
+
+    const transformLng = (x: number, y: number) => {
+      let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+      ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0
+      ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0
+      ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0
+      return ret
+    }
+
+    const dLat = transformLat(lng - 105.0, lat - 35.0)
+    const dLng = transformLng(lng - 105.0, lat - 35.0)
+    const radLat = lat / 180.0 * PI
+    let magic = Math.sin(radLat)
+    magic = 1 - ee * magic * magic
+    const sqrtMagic = Math.sqrt(magic)
+    dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI)
+    dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI)
+
+    return {
+      lng: lng + dLng,
+      lat: lat + dLat,
+    }
+  }
+
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
     const R = 6371000
     const dLat = ((lat2 - lat1) * Math.PI) / 180
@@ -282,6 +320,13 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
+  }
+
+  const getTriggerRadius = () => {
+    if (currentAccuracy !== null) {
+      return Math.max(5, Math.floor(currentAccuracy / 2))
+    }
+    return 10
   }
 
   const drawTriggerZone = () => {
@@ -300,10 +345,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     triggerMarkerRefs.current.clear()
 
     const colors = ['#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#667eea', '#fc6c85']
+    const radius = getTriggerRadius()
 
     calibrationPoints.forEach((point, index) => {
       const color = colors[index % colors.length]
-      const radius = 5
 
       const circle = new AMap.Circle({
         center: [point.lng, point.lat],
@@ -343,26 +388,61 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     watchPositionRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        const currentLng = position.coords.longitude
-        const currentLat = position.coords.latitude
+        const wgs84Lng = position.coords.longitude
+        const wgs84Lat = position.coords.latitude
+        const accuracy = position.coords.accuracy
+
+        const gcj02 = wgs84ToGcj02(wgs84Lng, wgs84Lat)
+        const currentLng = gcj02.lng
+        const currentLat = gcj02.lat
+
+        setCurrentAccuracy(accuracy)
+
+        const triggerRadius = getTriggerRadius()
+
+        console.log('[MapCanvas] Position update:', {
+          wgs84: { lng: wgs84Lng.toFixed(6), lat: wgs84Lat.toFixed(6) },
+          gcj02: { lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) },
+          accuracy,
+          triggerRadius,
+          calibrationPointsCount: calibrationPoints.length,
+        })
 
         let foundZone = null
         for (const point of calibrationPoints) {
           const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
-          if (distance <= 5) {
+          console.log(`[MapCanvas] Distance to '${point.name}': ${distance.toFixed(1)}m (triggerRadius: ${triggerRadius}m)`)
+          if (distance <= triggerRadius) {
             foundZone = point
             break
           }
         }
 
-        if (foundZone && foundZone.name !== currentZoneName) {
-          setCurrentZoneName(foundZone.name)
-          setShowTriggerText(true)
-          setIsInZone(true)
-        } else if (!foundZone && currentZoneName) {
-          setCurrentZoneName('')
-          setShowTriggerText(false)
-          setIsInZone(false)
+        if (foundZone) {
+          console.log(`[MapCanvas] Entering zone: ${foundZone.name}`)
+          if (foundZone.name !== currentZoneName) {
+            setCurrentZoneName(foundZone.name)
+            setShowTriggerText(true)
+            setIsInZone(true)
+            lastTriggeredZoneRef.current = foundZone.name
+          }
+        } else if (currentZoneName) {
+          const leaveThreshold = triggerRadius + 5
+          let isStillInAnyZone = false
+          for (const point of calibrationPoints) {
+            const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+            if (distance <= leaveThreshold) {
+              isStillInAnyZone = true
+              break
+            }
+          }
+          if (!isStillInAnyZone) {
+            console.log(`[MapCanvas] Leaving zone: ${currentZoneName}`)
+            setCurrentZoneName('')
+            setShowTriggerText(false)
+            setIsInZone(false)
+            lastTriggeredZoneRef.current = null
+          }
         }
       },
       (error) => {
