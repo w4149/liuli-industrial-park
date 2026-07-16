@@ -58,7 +58,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     loadStatus: 'loading',
     supabaseUrl: '',
   })
-  const watchPositionRef = useRef<number | null>(null)
   const amapIntervalRef = useRef<number | null>(null)
   const nativeFallbackRef = useRef<number | null>(null)
   const watchFailedRef = useRef(false)
@@ -595,10 +594,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   }
 
   const startWatchingPosition = () => {
-    if (watchPositionRef.current) {
-      navigator.geolocation.clearWatch(watchPositionRef.current)
-      watchPositionRef.current = null
-    }
     if (amapIntervalRef.current) {
       clearInterval(amapIntervalRef.current)
       amapIntervalRef.current = null
@@ -654,6 +649,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             if (amapFailCount >= 3) {
               setDebugInfo(prev => ({ ...prev, loadStatus: 'amap failed, fallback' }))
               watchFailedRef.current = true
+              if (amapIntervalRef.current) {
+                clearInterval(amapIntervalRef.current)
+                amapIntervalRef.current = null
+              }
               if (!nativeFallbackRef.current) {
                 startNativeFallback()
               }
@@ -667,8 +666,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       updatePosition()
       
       amapIntervalRef.current = window.setInterval(updatePosition, 3000)
-
-      geolocationRef.current = geolocation
     })
   }
 
@@ -681,10 +678,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (nativeFallbackRef.current) {
         clearInterval(nativeFallbackRef.current)
         nativeFallbackRef.current = null
-      }
-      if (watchPositionRef.current) {
-        navigator.geolocation.clearWatch(watchPositionRef.current)
-        watchPositionRef.current = null
       }
     }
   }, [])
