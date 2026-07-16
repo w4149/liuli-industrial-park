@@ -405,8 +405,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     calibrationPoints.forEach((point, index) => {
       const color = colors[index % colors.length]
 
+      const gcj02 = wgs84ToGcj02(point.lng, point.lat)
+
       const circle = new AMap.Circle({
-        center: [point.lng, point.lat],
+        center: [gcj02.lng, gcj02.lat],
         radius: radius,
         strokeColor: color,
         strokeOpacity: 0.8,
@@ -419,7 +421,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       triggerCircleRefs.current.set(point.id, circle)
 
       const marker = new AMap.Marker({
-        position: [point.lng, point.lat],
+        position: [gcj02.lng, gcj02.lat],
         title: point.name,
         zIndex: 51,
       })
@@ -559,7 +561,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     let foundZone = null
 
     for (const point of points) {
-      const distance = calculateDistance(targetLat, targetLng, point.lat, point.lng)
+      const pointGCJ02 = wgs84ToGcj02(point.lng, point.lat)
+      const distance = calculateDistance(targetLat, targetLng, pointGCJ02.lat, pointGCJ02.lng)
       if (distance < nearestDistance) {
         nearestDistance = distance
         nearestPoint = point.name
@@ -776,7 +779,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     let foundZone = null
 
     for (const point of points) {
-      const distance = calculateDistance(gcj02Lat, gcj02Lng, point.lat, point.lng)
+      const pointGCJ02 = wgs84ToGcj02(point.lng, point.lat)
+      const distance = calculateDistance(gcj02Lat, gcj02Lng, pointGCJ02.lat, pointGCJ02.lng)
       if (distance < nearestDistance) {
         nearestDistance = distance
         nearestPoint = point.name
@@ -801,6 +805,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       setIsInZone(true)
       lastTriggeredZoneRef.current = foundZone.name
     }
+
+    lastPositionRef.current = { lng: gcj02Lng, lat: gcj02Lat }
 
     startWatchingPosition()
   }
