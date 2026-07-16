@@ -17,7 +17,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const groundImageRef = useRef<any>(null)
-  const geolocationRef = useRef<any>(null)
   const userMarkerRef = useRef<any>(null)
   const initializedRef = useRef(false)
   const aMapRef = useRef<any>(null)
@@ -831,27 +830,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       })
     }
 
-    const tryAmapGeolocation = () => {
-      return new Promise<{ lng: number; lat: number }>((resolve, reject) => {
-        const geolocation = geolocationRef.current
-        if (!geolocation) {
-          reject({ source: 'amap', error: new Error('AMap Geolocation not initialized') })
-          return
-        }
-
-        geolocation.getCurrentPosition((status: string, result: any) => {
-          if (status === 'complete' && result.position) {
-            resolve({
-              lng: result.position.lng,
-              lat: result.position.lat,
-            })
-          } else {
-            reject({ source: 'amap', error: new Error(`AMap geolocation failed: ${status}`) })
-          }
-        })
-      })
-    }
-
     tryNativeGeolocation()
       .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'native'))
       .catch((nativeError) => {
@@ -859,11 +837,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         return tryTaroGeolocation()
       })
       .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'taro'))
-      .catch((taroError) => {
-        console.warn('Taro geolocation failed, trying AMap...', taroError)
-        return tryAmapGeolocation()
-      })
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'amap'))
       .catch(failCallback)
   }
 
