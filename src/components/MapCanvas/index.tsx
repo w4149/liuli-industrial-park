@@ -59,6 +59,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   })
   const amapIntervalRef = useRef<number | null>(null)
   const nativeFallbackRef = useRef<number | null>(null)
+  const interpolationRef = useRef<number | null>(null)
+  const lastPositionRef = useRef<{ lng: number; lat: number } | null>(null)
+  const targetPositionRef = useRef<{ lng: number; lat: number } | null>(null)
   const watchFailedRef = useRef(false)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
@@ -369,7 +372,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
 
     const k = kalmanRef.current
-    const varianceDelta = 3
+    const varianceDelta = 0.5
 
     k.variance += varianceDelta
 
@@ -470,6 +473,45 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [customMapUrl, customMapBounds, mapLoaded])
 
+  const updateMarkerPosition = (lng: number, lat: number) => {
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setPosition([lng, lat])
+    }
+    if (mapRef.current) {
+      mapRef.current.panTo([lng, lat])
+    }
+    setCurrentCoords({ lng: lng.toFixed(6), lat: lat.toFixed(6) })
+  }
+
+  const startInterpolation = (startLng: number, startLat: number, endLng: number, endLat: number) => {
+    if (interpolationRef.current) {
+      clearInterval(interpolationRef.current)
+    }
+
+    const duration = 1000
+    const steps = 60
+    const stepDuration = duration / steps
+    let step = 0
+
+    interpolationRef.current = window.setInterval(() => {
+      step++
+      const progress = Math.min(step / steps, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+
+      const currentLng = startLng + (endLng - startLng) * eased
+      const currentLat = startLat + (endLat - startLat) * eased
+
+      updateMarkerPosition(currentLng, currentLat)
+
+      if (step >= steps) {
+        if (interpolationRef.current) {
+          clearInterval(interpolationRef.current)
+          interpolationRef.current = null
+        }
+      }
+    }, stepDuration)
+  }
+
   const handlePositionUpdate = (position: GeolocationPosition, isGCJ02: boolean = false) => {
     let lng = position.coords.longitude
     let lat = position.coords.latitude
@@ -482,30 +524,35 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
 
     const filtered = kalmanFilter(lng, lat, accuracy)
-    const currentLng = filtered.lng
-    const currentLat = filtered.lat
+    const targetLng = filtered.lng
+    const targetLat = filtered.lat
 
     setLocationStatus('success')
     setCurrentAccuracy(accuracy)
-    setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
 
-    if (userMarkerRef.current) {
-      userMarkerRef.current.setPosition([currentLng, currentLat])
-    } else if (mapRef.current) {
+    if (!userMarkerRef.current && mapRef.current) {
       const userMarker = new (window as any).AMap.Marker({
-        position: [currentLng, currentLat],
+        position: [targetLng, targetLat],
         title: '我的位置',
         zIndex: 1000,
       })
       userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
       mapRef.current.add(userMarker)
       userMarkerRef.current = userMarker
+
+      if (!hasInitialPanRef.current) {
+        mapRef.current.panTo([targetLng, targetLat])
+        hasInitialPanRef.current = true
+      }
     }
 
-    if (mapRef.current && !hasInitialPanRef.current) {
-      mapRef.current.panTo([currentLng, currentLat])
-      hasInitialPanRef.current = true
+    if (lastPositionRef.current && userMarkerRef.current) {
+      startInterpolation(lastPositionRef.current.lng, lastPositionRef.current.lat, targetLng, targetLat)
+    } else {
+      updateMarkerPosition(targetLng, targetLat)
     }
+
+    lastPositionRef.current = { lng: targetLng, lat: targetLat }
 
     const triggerRadius = getTriggerRadius()
     const points = calibrationPointsRef.current
@@ -515,7 +562,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     let foundZone = null
 
     for (const point of points) {
-      const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+      const distance = calculateDistance(targetLat, targetLng, point.lat, point.lng)
       if (distance < nearestDistance) {
         nearestDistance = distance
         nearestPoint = point.name
@@ -546,7 +593,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       const leaveThreshold = triggerRadius + 5
       let isStillInAnyZone = false
       for (const point of points) {
-        const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+        const distance = calculateDistance(targetLat, targetLng, point.lat, point.lng)
         if (distance <= leaveThreshold) {
           isStillInAnyZone = true
           break
@@ -585,7 +632,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           }
         )
       }
-    }, 3000)
+    }, 1000)
   }
 
   const startWatchingPosition = () => {
@@ -660,7 +707,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
       updatePosition()
       
-      amapIntervalRef.current = window.setInterval(updatePosition, 3000)
+      amapIntervalRef.current = window.setInterval(updatePosition, 1000)
     })
   }
 
@@ -673,6 +720,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (nativeFallbackRef.current) {
         clearInterval(nativeFallbackRef.current)
         nativeFallbackRef.current = null
+      }
+      if (interpolationRef.current) {
+        clearInterval(interpolationRef.current)
+        interpolationRef.current = null
       }
     }
   }, [])
