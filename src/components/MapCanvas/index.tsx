@@ -592,10 +592,11 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         lastTriggeredZoneRef.current = foundZone.name
       }
     } else if (currentZoneNameRef.current) {
+      const leaveThreshold = triggerRadius + 5
       let isStillInAnyZone = false
       for (const point of points) {
         const distance = calculateDistance(targetLat, targetLng, point.lat, point.lng)
-        if (distance <= triggerRadius) {
+        if (distance <= leaveThreshold) {
           isStillInAnyZone = true
           break
         }
