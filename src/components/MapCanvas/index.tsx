@@ -67,6 +67,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const lastTriggeredZoneRef = useRef<string | null>(null)
   const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
   const currentZoneNameRef = useRef<string>('')
+  const geolocationRef = useRef<any>(null)
 
   useEffect(() => {
     loadCalibrationPoints()
@@ -582,7 +583,45 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     const AMap = (window as any).AMap
     if (!AMap) {
-      setDebugInfo(prev => ({ ...prev, loadStatus: 'amap not loaded' }))
+      setDebugInfo(prev => ({ ...prev, loadStatus: 'amap not loaded, fallback to native' }))
+      watchPositionRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          watchFailedRef.current = false
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+          handlePositionUpdate(position)
+        },
+        (error) => {
+          console.warn('Native watch position error:', error)
+          setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'native error: ' + error.code }))
+          if (error.code === 3 && !intervalRef.current) {
+            intervalRef.current = window.setInterval(() => {
+              if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                  (position) => {
+                    handlePositionUpdate(position)
+                  },
+                  (intervalError) => {
+                    console.warn('Interval location update error:', intervalError)
+                  },
+                  {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 0,
+                  }
+                )
+              }
+            }, 3000)
+          }
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      )
       return
     }
 
@@ -594,30 +633,50 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         convert: true,
       })
 
-      geolocation.watchPosition(
-        (status: string, result: any) => {
-          if (status === 'complete' && result.position) {
-            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watching' }))
-            
-            const position = {
-              coords: {
-                longitude: result.position.lng,
-                latitude: result.position.lat,
-                accuracy: result.accuracy || 10,
-              }
-            }
-            
-            handlePositionUpdate(position as unknown as GeolocationPosition)
-          } else {
-            console.warn('AMap geolocation error:', status, result)
-            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap error: ' + status }))
+      geolocation.watchPosition((status: string, result: any) => {
+        if (status === 'complete' && result.position) {
+          watchFailedRef.current = false
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
           }
-        },
-        (error: any) => {
-          console.warn('AMap watchPosition error:', error)
-          setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'amap watch error' }))
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watching' }))
+          
+          const position = {
+            coords: {
+              longitude: result.position.lng,
+              latitude: result.position.lat,
+              accuracy: result.accuracy || 10,
+            }
+          }
+          
+          handlePositionUpdate(position as unknown as GeolocationPosition)
+        } else {
+          console.warn('AMap geolocation error:', status, result)
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'amap error: ' + status }))
+          
+          watchFailedRef.current = true
+          if (!intervalRef.current) {
+            intervalRef.current = window.setInterval(() => {
+              if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                  (position) => {
+                    handlePositionUpdate(position)
+                  },
+                  (intervalError) => {
+                    console.warn('Interval location update error:', intervalError)
+                  },
+                  {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 0,
+                  }
+                )
+              }
+            }, 3000)
+          }
         }
-      )
+      })
 
       geolocationRef.current = geolocation
     })
