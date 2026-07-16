@@ -64,6 +64,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
   const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
+  const currentZoneNameRef = useRef<string>('')
 
   useEffect(() => {
     loadCalibrationPoints()
@@ -72,6 +73,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   useEffect(() => {
     calibrationPointsRef.current = calibrationPoints
   }, [calibrationPoints])
+
+  useEffect(() => {
+    currentZoneNameRef.current = currentZoneName
+  }, [currentZoneName])
 
   const loadCalibrationPoints = async () => {
     try {
@@ -524,13 +529,13 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     })
 
     if (foundZone) {
-      if (foundZone.name !== currentZoneName) {
+      if (foundZone.name !== currentZoneNameRef.current) {
         setCurrentZoneName(foundZone.name)
         setShowTriggerText(true)
         setIsInZone(true)
         lastTriggeredZoneRef.current = foundZone.name
       }
-    } else if (currentZoneName) {
+    } else if (currentZoneNameRef.current) {
       const leaveThreshold = triggerRadius + 5
       let isStillInAnyZone = false
       for (const point of points) {
