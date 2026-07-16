@@ -310,6 +310,11 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   }, [pois, onPOIClick])
 
   const wgs84ToGcj02 = (lng: number, lat: number) => {
+    if (isNaN(lng) || isNaN(lat) || lng === undefined || lat === undefined) {
+      console.warn('wgs84ToGcj02: invalid coordinates', lng, lat)
+      return { lng: lng || 0, lat: lat || 0 }
+    }
+
     const PI = Math.PI
     const a = 6378245.0
     const ee = 0.00669342162296594323
@@ -404,7 +409,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     calibrationPoints.forEach((point, index) => {
       const color = colors[index % colors.length]
-
       const gcj02 = wgs84ToGcj02(point.lng, point.lat)
 
       const circle = new AMap.Circle({
