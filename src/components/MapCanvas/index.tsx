@@ -269,17 +269,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           }
         })
 
-        geolocationRef.current = new AMap.Geolocation({
-          enableHighAccuracy: false,
-          timeout: 8000,
-          maximumAge: 300000,
-          convert: true,
-          showButton: false,
-          showMarker: false,
-          showCircle: false,
-          panToLocation: false,
-        })
-
         map.on('complete', () => {
           setTimeout(() => {
             setMapLoaded(true)
