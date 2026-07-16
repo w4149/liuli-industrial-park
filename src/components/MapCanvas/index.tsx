@@ -65,6 +65,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const lastTriggeredZoneRef = useRef<string | null>(null)
   const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
   const currentZoneNameRef = useRef<string>('')
+  const hasInitialPanRef = useRef(false)
 
   useEffect(() => {
     loadCalibrationPoints()
@@ -501,8 +502,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       userMarkerRef.current = userMarker
     }
 
-    if (mapRef.current) {
+    if (mapRef.current && !hasInitialPanRef.current) {
       mapRef.current.panTo([currentLng, currentLat])
+      hasInitialPanRef.current = true
     }
 
     const triggerRadius = getTriggerRadius()
