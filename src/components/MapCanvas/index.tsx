@@ -60,7 +60,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   })
   const watchPositionRef = useRef<number | null>(null)
   const intervalRef = useRef<number | null>(null)
-  const retryTimerIdRef = useRef<number | null>(null)
   const watchFailedRef = useRef(false)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
@@ -483,10 +482,16 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [customMapUrl, customMapBounds, mapLoaded])
 
-  const handlePositionUpdate = (position: GeolocationPosition) => {
-    const lng = position.coords.longitude
-    const lat = position.coords.latitude
+  const handlePositionUpdate = (position: GeolocationPosition, isGCJ02: boolean = false) => {
+    let lng = position.coords.longitude
+    let lat = position.coords.latitude
     const accuracy = position.coords.accuracy
+
+    if (!isGCJ02) {
+      const gcj02 = wgs84ToGcj02(lng, lat)
+      lng = gcj02.lng
+      lat = gcj02.lat
+    }
 
     const filtered = kalmanFilter(lng, lat, accuracy)
     const currentLng = filtered.lng
@@ -525,11 +530,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         foundZone = point
         break
       }
-    }
-
-    if (retryTimerIdRef.current) {
-      clearTimeout(retryTimerIdRef.current)
-      retryTimerIdRef.current = null
     }
 
     setDebugInfo({
@@ -573,10 +573,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
-    }
-    if (retryTimerIdRef.current) {
-      clearTimeout(retryTimerIdRef.current)
-      retryTimerIdRef.current = null
     }
 
     setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting amap' }))
@@ -633,50 +629,54 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         convert: true,
       })
 
-      geolocation.watchPosition((status: string, result: any) => {
-        if (status === 'complete' && result.position) {
-          watchFailedRef.current = false
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current)
-            intervalRef.current = null
-          }
-          setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watching' }))
-          
-          const position = {
-            coords: {
-              longitude: result.position.lng,
-              latitude: result.position.lat,
-              accuracy: result.accuracy || 10,
+      const updatePosition = () => {
+        geolocation.getCurrentPosition((status: string, result: any) => {
+          if (status === 'complete' && result.position) {
+            watchFailedRef.current = false
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap polling' }))
+            
+            const position = {
+              coords: {
+                longitude: result.position.lng,
+                latitude: result.position.lat,
+                accuracy: result.accuracy || 10,
+              }
+            }
+            
+            handlePositionUpdate(position as unknown as GeolocationPosition, true)
+          } else {
+            console.warn('AMap geolocation error:', status, result)
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap error: ' + status }))
+            
+            watchFailedRef.current = true
+            if (!intervalRef.current) {
+              intervalRef.current = window.setInterval(() => {
+                if ('geolocation' in navigator) {
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                      handlePositionUpdate(position)
+                    },
+                    (intervalError) => {
+                      console.warn('Interval location update error:', intervalError)
+                    },
+                    {
+                      enableHighAccuracy: false,
+                      timeout: 10000,
+                      maximumAge: 0,
+                    }
+                  )
+                }
+              }, 3000)
             }
           }
-          
-          handlePositionUpdate(position as unknown as GeolocationPosition)
-        } else {
-          console.warn('AMap geolocation error:', status, result)
-          setDebugInfo(prev => ({ ...prev, loadStatus: 'amap error: ' + status }))
-          
-          watchFailedRef.current = true
-          if (!intervalRef.current) {
-            intervalRef.current = window.setInterval(() => {
-              if ('geolocation' in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                  (position) => {
-                    handlePositionUpdate(position)
-                  },
-                  (intervalError) => {
-                    console.warn('Interval location update error:', intervalError)
-                  },
-                  {
-                    enableHighAccuracy: false,
-                    timeout: 10000,
-                    maximumAge: 0,
-                  }
-                )
-              }
-            }, 3000)
-          }
-        }
-      })
+        })
+      }
+
+      updatePosition()
+      
+      if (!intervalRef.current) {
+        intervalRef.current = window.setInterval(updatePosition, 3000)
+      }
 
       geolocationRef.current = geolocation
     })
@@ -695,10 +695,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
-      }
-      if (retryTimerIdRef.current) {
-        clearTimeout(retryTimerIdRef.current)
-        retryTimerIdRef.current = null
       }
     }
   }, [])
