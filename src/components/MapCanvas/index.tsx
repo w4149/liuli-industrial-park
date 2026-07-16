@@ -484,6 +484,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     const currentLng = filtered.lng
     const currentLat = filtered.lat
 
+    setLocationStatus('success')
     setCurrentAccuracy(accuracy)
     setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
 
