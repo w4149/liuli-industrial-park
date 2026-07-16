@@ -544,7 +544,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
 
     if (lastPositionRef.current && userMarkerRef.current) {
-      startInterpolation(lastPositionRef.current.lng, lastPositionRef.current.lat, targetLng, targetLat)
+      const distance = calculateDistance(lastPositionRef.current.lat, lastPositionRef.current.lng, targetLat, targetLng)
+      if (distance > 5) {
+        startInterpolation(lastPositionRef.current.lng, lastPositionRef.current.lat, targetLng, targetLat)
+      } else {
+        updateMarkerPosition(targetLng, targetLat)
+      }
     } else {
       updateMarkerPosition(targetLng, targetLat)
     }
@@ -587,11 +592,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         lastTriggeredZoneRef.current = foundZone.name
       }
     } else if (currentZoneNameRef.current) {
-      const leaveThreshold = triggerRadius + 5
       let isStillInAnyZone = false
       for (const point of points) {
         const distance = calculateDistance(targetLat, targetLng, point.lat, point.lng)
-        if (distance <= leaveThreshold) {
+        if (distance <= triggerRadius) {
           isStillInAnyZone = true
           break
         }
