@@ -310,11 +310,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   }, [pois, onPOIClick])
 
   const wgs84ToGcj02 = (lng: number, lat: number) => {
-    if (isNaN(lng) || isNaN(lat) || lng === undefined || lat === undefined) {
-      console.warn('wgs84ToGcj02: invalid coordinates', lng, lat)
-      return { lng: lng || 0, lat: lat || 0 }
-    }
-
     const PI = Math.PI
     const a = 6378245.0
     const ee = 0.00669342162296594323
@@ -409,10 +404,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     calibrationPoints.forEach((point, index) => {
       const color = colors[index % colors.length]
-      const gcj02 = wgs84ToGcj02(point.lng, point.lat)
 
       const circle = new AMap.Circle({
-        center: [gcj02.lng, gcj02.lat],
+        center: [point.lng, point.lat],
         radius: radius,
         strokeColor: color,
         strokeOpacity: 0.8,
@@ -425,7 +419,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       triggerCircleRefs.current.set(point.id, circle)
 
       const marker = new AMap.Marker({
-        position: [gcj02.lng, gcj02.lat],
+        position: [point.lng, point.lat],
         title: point.name,
         zIndex: 51,
       })
@@ -565,8 +559,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     let foundZone = null
 
     for (const point of points) {
-      const pointGCJ02 = wgs84ToGcj02(point.lng, point.lat)
-      const distance = calculateDistance(targetLat, targetLng, pointGCJ02.lat, pointGCJ02.lng)
+      const distance = calculateDistance(targetLat, targetLng, point.lat, point.lng)
       if (distance < nearestDistance) {
         nearestDistance = distance
         nearestPoint = point.name
@@ -783,8 +776,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     let foundZone = null
 
     for (const point of points) {
-      const pointGCJ02 = wgs84ToGcj02(point.lng, point.lat)
-      const distance = calculateDistance(gcj02Lat, gcj02Lng, pointGCJ02.lat, pointGCJ02.lng)
+      const distance = calculateDistance(gcj02Lat, gcj02Lng, point.lat, point.lng)
       if (distance < nearestDistance) {
         nearestDistance = distance
         nearestPoint = point.name
