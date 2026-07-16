@@ -501,6 +501,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       userMarkerRef.current = userMarker
     }
 
+    if (mapRef.current) {
+      mapRef.current.panTo([currentLng, currentLat])
+    }
+
     const triggerRadius = getTriggerRadius()
     const points = calibrationPointsRef.current
 
@@ -820,7 +824,40 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       })
     }
 
-    tryNativeGeolocation()
+    const tryAmapGeolocation = () => {
+      return new Promise<{ lng: number; lat: number }>((resolve, reject) => {
+        const AMap = (window as any).AMap
+        if (!AMap) {
+          reject({ source: 'amap', error: new Error('AMap not loaded') })
+          return
+        }
+        AMap.plugin('AMap.Geolocation', () => {
+          const geolocation = new AMap.Geolocation({
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 5000,
+            convert: true,
+          })
+          geolocation.getCurrentPosition((status: string, result: any) => {
+            if (status === 'complete' && result.position) {
+              resolve({
+                lng: result.position.lng,
+                lat: result.position.lat,
+              })
+            } else {
+              reject({ source: 'amap', error: new Error(`AMap geolocation failed: ${status}`) })
+            }
+          })
+        })
+      })
+    }
+
+    tryAmapGeolocation()
+      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'amap'))
+      .catch((amapError) => {
+        console.warn('AMap geolocation failed, trying native...', amapError)
+        return tryNativeGeolocation()
+      })
       .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'native'))
       .catch((nativeError) => {
         console.warn('Native geolocation failed, trying Taro...', nativeError)
@@ -902,7 +939,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         </div>
       )}
 
-      {locationStatus === 'success' && (
+      {mapLoaded && (
         <div style={{ position: 'absolute', bottom: '80px', left: '10px', background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '6px 10px', borderRadius: '8px', zIndex: 150, fontSize: '10px', pointerEvents: 'none' }}>
           <div>📍 点: {debugInfo.pointsCount}</div>
           <div>🔴 半径: {debugInfo.triggerRadius}m</div>
