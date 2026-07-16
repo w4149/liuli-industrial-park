@@ -477,9 +477,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     if (userMarkerRef.current) {
       userMarkerRef.current.setPosition([lng, lat])
     }
-    if (mapRef.current) {
-      mapRef.current.panTo([lng, lat])
-    }
     setCurrentCoords({ lng: lng.toFixed(6), lat: lat.toFixed(6) })
   }
 
@@ -488,8 +485,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       clearInterval(interpolationRef.current)
     }
 
-    const duration = 1000
-    const steps = 60
+    const duration = 500
+    const steps = 30
     const stepDuration = duration / steps
     let step = 0
 
