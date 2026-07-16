@@ -59,14 +59,14 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     supabaseUrl: '',
   })
   const watchPositionRef = useRef<number | null>(null)
-  const intervalRef = useRef<number | null>(null)
+  const amapIntervalRef = useRef<number | null>(null)
+  const nativeFallbackRef = useRef<number | null>(null)
   const watchFailedRef = useRef(false)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
   const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
   const currentZoneNameRef = useRef<string>('')
-  const geolocationRef = useRef<any>(null)
 
   useEffect(() => {
     loadCalibrationPoints()
@@ -567,57 +567,52 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }
 
+  const startNativeFallback = () => {
+    setDebugInfo(prev => ({ ...prev, loadStatus: 'fallback to native' }))
+    
+    if (nativeFallbackRef.current) {
+      clearInterval(nativeFallbackRef.current)
+    }
+    
+    nativeFallbackRef.current = window.setInterval(() => {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            watchFailedRef.current = false
+            handlePositionUpdate(position)
+          },
+          (intervalError) => {
+            console.warn('Native fallback error:', intervalError)
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 0,
+          }
+        )
+      }
+    }, 3000)
+  }
+
   const startWatchingPosition = () => {
     if (watchPositionRef.current) {
       navigator.geolocation.clearWatch(watchPositionRef.current)
+      watchPositionRef.current = null
     }
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
+    if (amapIntervalRef.current) {
+      clearInterval(amapIntervalRef.current)
+      amapIntervalRef.current = null
+    }
+    if (nativeFallbackRef.current) {
+      clearInterval(nativeFallbackRef.current)
+      nativeFallbackRef.current = null
     }
 
     setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting amap' }))
 
     const AMap = (window as any).AMap
     if (!AMap) {
-      setDebugInfo(prev => ({ ...prev, loadStatus: 'amap not loaded, fallback to native' }))
-      watchPositionRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          watchFailedRef.current = false
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current)
-            intervalRef.current = null
-          }
-          handlePositionUpdate(position)
-        },
-        (error) => {
-          console.warn('Native watch position error:', error)
-          setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'native error: ' + error.code }))
-          if (error.code === 3 && !intervalRef.current) {
-            intervalRef.current = window.setInterval(() => {
-              if ('geolocation' in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                  (position) => {
-                    handlePositionUpdate(position)
-                  },
-                  (intervalError) => {
-                    console.warn('Interval location update error:', intervalError)
-                  },
-                  {
-                    enableHighAccuracy: false,
-                    timeout: 10000,
-                    maximumAge: 0,
-                  }
-                )
-              }
-            }, 3000)
-          }
-        },
-        {
-          enableHighAccuracy: false,
-          timeout: 10000,
-          maximumAge: 0,
-        }
-      )
+      startNativeFallback()
       return
     }
 
@@ -629,9 +624,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         convert: true,
       })
 
+      let amapFailCount = 0
+
       const updatePosition = () => {
         geolocation.getCurrentPosition((status: string, result: any) => {
           if (status === 'complete' && result.position) {
+            amapFailCount = 0
             watchFailedRef.current = false
             setDebugInfo(prev => ({ ...prev, loadStatus: 'amap polling' }))
             
@@ -644,29 +642,23 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             }
             
             handlePositionUpdate(position as unknown as GeolocationPosition, true)
+            
+            if (nativeFallbackRef.current) {
+              clearInterval(nativeFallbackRef.current)
+              nativeFallbackRef.current = null
+            }
           } else {
             console.warn('AMap geolocation error:', status, result)
-            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap error: ' + status }))
+            amapFailCount++
             
-            watchFailedRef.current = true
-            if (!intervalRef.current) {
-              intervalRef.current = window.setInterval(() => {
-                if ('geolocation' in navigator) {
-                  navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                      handlePositionUpdate(position)
-                    },
-                    (intervalError) => {
-                      console.warn('Interval location update error:', intervalError)
-                    },
-                    {
-                      enableHighAccuracy: false,
-                      timeout: 10000,
-                      maximumAge: 0,
-                    }
-                  )
-                }
-              }, 3000)
+            if (amapFailCount >= 3) {
+              setDebugInfo(prev => ({ ...prev, loadStatus: 'amap failed, fallback' }))
+              watchFailedRef.current = true
+              if (!nativeFallbackRef.current) {
+                startNativeFallback()
+              }
+            } else {
+              setDebugInfo(prev => ({ ...prev, loadStatus: 'amap retry ' + amapFailCount }))
             }
           }
         })
@@ -674,9 +666,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
       updatePosition()
       
-      if (!intervalRef.current) {
-        intervalRef.current = window.setInterval(updatePosition, 3000)
-      }
+      amapIntervalRef.current = window.setInterval(updatePosition, 3000)
 
       geolocationRef.current = geolocation
     })
@@ -684,17 +674,17 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
   useEffect(() => {
     return () => {
-      if (geolocationRef.current) {
-        geolocationRef.current.clearWatch()
-        geolocationRef.current = null
+      if (amapIntervalRef.current) {
+        clearInterval(amapIntervalRef.current)
+        amapIntervalRef.current = null
+      }
+      if (nativeFallbackRef.current) {
+        clearInterval(nativeFallbackRef.current)
+        nativeFallbackRef.current = null
       }
       if (watchPositionRef.current) {
         navigator.geolocation.clearWatch(watchPositionRef.current)
         watchPositionRef.current = null
-      }
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
       }
     }
   }, [])
