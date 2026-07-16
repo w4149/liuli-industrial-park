@@ -59,6 +59,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const watchPositionRef = useRef<number | null>(null)
   const intervalRef = useRef<number | null>(null)
   const retryTimerIdRef = useRef<number | null>(null)
+  const watchFailedRef = useRef(false)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
@@ -460,6 +461,94 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }, [customMapUrl, customMapBounds, mapLoaded])
 
+  const handlePositionUpdate = (position: GeolocationPosition) => {
+    const wgs84Lng = position.coords.longitude
+    const wgs84Lat = position.coords.latitude
+    const accuracy = position.coords.accuracy
+
+    const gcj02 = wgs84ToGcj02(wgs84Lng, wgs84Lat)
+    const rawLng = gcj02.lng
+    const rawLat = gcj02.lat
+
+    const filtered = kalmanFilter(rawLng, rawLat, accuracy)
+    const currentLng = filtered.lng
+    const currentLat = filtered.lat
+
+    setCurrentAccuracy(accuracy)
+    setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setPosition([currentLng, currentLat])
+    } else if (mapRef.current) {
+      const userMarker = new (window as any).AMap.Marker({
+        position: [currentLng, currentLat],
+        title: '我的位置',
+        zIndex: 1000,
+      })
+      userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
+      mapRef.current.add(userMarker)
+      userMarkerRef.current = userMarker
+    }
+
+    const triggerRadius = getTriggerRadius()
+    const points = calibrationPointsRef.current
+
+    let nearestPoint = null
+    let nearestDistance = Infinity
+    let foundZone = null
+
+    for (const point of points) {
+      const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestPoint = point.name
+      }
+      if (distance <= triggerRadius) {
+        foundZone = point
+        break
+      }
+    }
+
+    if (retryTimerIdRef.current) {
+      clearTimeout(retryTimerIdRef.current)
+      retryTimerIdRef.current = null
+    }
+
+    setDebugInfo({
+      watchRunning: !watchFailedRef.current,
+      pointsCount: points.length,
+      triggerRadius,
+      nearestPoint,
+      nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
+      lastUpdate: Date.now(),
+    })
+
+    if (foundZone) {
+      if (foundZone.name !== currentZoneName) {
+        setCurrentZoneName(foundZone.name)
+        setShowTriggerText(true)
+        setIsInZone(true)
+        lastTriggeredZoneRef.current = foundZone.name
+      }
+    } else if (currentZoneName) {
+      const leaveThreshold = triggerRadius + 5
+      let isStillInAnyZone = false
+      for (const point of points) {
+        const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
+        if (distance <= leaveThreshold) {
+          isStillInAnyZone = true
+          break
+        }
+      }
+      if (!isStillInAnyZone) {
+        setCurrentZoneName('')
+        setShowTriggerText(false)
+        setIsInZone(false)
+        lastTriggeredZoneRef.current = null
+      }
+    }
+  }
+
   const startWatchingPosition = () => {
     if (watchPositionRef.current) {
       navigator.geolocation.clearWatch(watchPositionRef.current)
@@ -476,91 +565,37 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     watchPositionRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        const wgs84Lng = position.coords.longitude
-        const wgs84Lat = position.coords.latitude
-        const accuracy = position.coords.accuracy
-
-        const gcj02 = wgs84ToGcj02(wgs84Lng, wgs84Lat)
-        const rawLng = gcj02.lng
-        const rawLat = gcj02.lat
-
-        const filtered = kalmanFilter(rawLng, rawLat, accuracy)
-        const currentLng = filtered.lng
-        const currentLat = filtered.lat
-
-        setCurrentAccuracy(accuracy)
-        setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
-
-        if (userMarkerRef.current) {
-          userMarkerRef.current.setPosition([currentLng, currentLat])
+        watchFailedRef.current = false
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
         }
-
-        const triggerRadius = getTriggerRadius()
-        const points = calibrationPointsRef.current
-
-        let nearestPoint = null
-        let nearestDistance = Infinity
-
-        let foundZone = null
-        for (const point of points) {
-          const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
-          if (distance < nearestDistance) {
-            nearestDistance = distance
-            nearestPoint = point.name
-          }
-          if (distance <= triggerRadius) {
-            foundZone = point
-            break
-          }
-        }
-
-        if (retryTimerIdRef.current) {
-          clearTimeout(retryTimerIdRef.current)
-          retryTimerIdRef.current = null
-        }
-
-        setDebugInfo({
-          watchRunning: true,
-          pointsCount: points.length,
-          triggerRadius,
-          nearestPoint,
-          nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
-          lastUpdate: Date.now(),
-        })
-
-        if (foundZone) {
-          if (foundZone.name !== currentZoneName) {
-            setCurrentZoneName(foundZone.name)
-            setShowTriggerText(true)
-            setIsInZone(true)
-            lastTriggeredZoneRef.current = foundZone.name
-          }
-        } else if (currentZoneName) {
-          const leaveThreshold = triggerRadius + 5
-          let isStillInAnyZone = false
-          for (const point of points) {
-            const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
-            if (distance <= leaveThreshold) {
-              isStillInAnyZone = true
-              break
-            }
-          }
-          if (!isStillInAnyZone) {
-            setCurrentZoneName('')
-            setShowTriggerText(false)
-            setIsInZone(false)
-            lastTriggeredZoneRef.current = null
-          }
-        }
+        handlePositionUpdate(position)
       },
       (error) => {
         console.warn('Watch position error:', error)
         setDebugInfo(prev => ({ ...prev, watchRunning: false, loadStatus: 'watch error: ' + error.code }))
-        if (error.code === 3 && !retryTimerIdRef.current) {
-          retryTimerIdRef.current = window.setTimeout(() => {
-            retryTimerIdRef.current = null
-            startWatchingPosition()
-          }, 5000)
+        if (error.code === 3) {
+          watchFailedRef.current = true
+          if (!intervalRef.current) {
+            intervalRef.current = window.setInterval(() => {
+              if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                  (position) => {
+                    handlePositionUpdate(position)
+                  },
+                  (intervalError) => {
+                    console.warn('Interval location update error:', intervalError)
+                  },
+                  {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 0,
+                  }
+                )
+              }
+            }, 3000)
+          }
         }
       },
       {
@@ -569,94 +604,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         maximumAge: 0,
       }
     )
-
-    intervalRef.current = window.setInterval(() => {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const wgs84Lng = position.coords.longitude
-            const wgs84Lat = position.coords.latitude
-            const accuracy = position.coords.accuracy
-
-            const gcj02 = wgs84ToGcj02(wgs84Lng, wgs84Lat)
-            const rawLng = gcj02.lng
-            const rawLat = gcj02.lat
-
-            const filtered = kalmanFilter(rawLng, rawLat, accuracy)
-            const currentLng = filtered.lng
-            const currentLat = filtered.lat
-
-            setCurrentAccuracy(accuracy)
-            setCurrentCoords({ lng: currentLng.toFixed(6), lat: currentLat.toFixed(6) })
-
-            if (userMarkerRef.current) {
-              userMarkerRef.current.setPosition([currentLng, currentLat])
-            }
-
-            const triggerRadius = getTriggerRadius()
-            const points = calibrationPointsRef.current
-
-            let nearestPoint = null
-            let nearestDistance = Infinity
-            let foundZone = null
-
-            for (const point of points) {
-              const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
-              if (distance < nearestDistance) {
-                nearestDistance = distance
-                nearestPoint = point.name
-              }
-              if (distance <= triggerRadius) {
-                foundZone = point
-                break
-              }
-            }
-
-            setDebugInfo({
-              watchRunning: true,
-              pointsCount: points.length,
-              triggerRadius,
-              nearestPoint,
-              nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
-              lastUpdate: Date.now(),
-            })
-
-            if (foundZone) {
-              if (foundZone.name !== currentZoneName) {
-                setCurrentZoneName(foundZone.name)
-                setShowTriggerText(true)
-                setIsInZone(true)
-                lastTriggeredZoneRef.current = foundZone.name
-              }
-            } else if (currentZoneName) {
-              const leaveThreshold = triggerRadius + 5
-              let isStillInAnyZone = false
-              for (const point of points) {
-                const distance = calculateDistance(currentLat, currentLng, point.lat, point.lng)
-                if (distance <= leaveThreshold) {
-                  isStillInAnyZone = true
-                  break
-                }
-              }
-              if (!isStillInAnyZone) {
-                setCurrentZoneName('')
-                setShowTriggerText(false)
-                setIsInZone(false)
-                lastTriggeredZoneRef.current = null
-              }
-            }
-          },
-          (error) => {
-            console.warn('Interval location update error:', error)
-          },
-          {
-            enableHighAccuracy: false,
-            timeout: 10000,
-            maximumAge: 0,
-          }
-        )
-      }
-    }, 3000)
   }
 
   useEffect(() => {
