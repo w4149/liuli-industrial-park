@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { POI } from '@/types'
 import { supabaseClient } from '@/utils/supabase/client'
+import bedroomAudioSrc from '@/assets/audio/fifi-Jasmine1.m4a'
 
 interface MapCanvasProps {
   pois: POI[]
@@ -67,8 +68,14 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
   const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const currentZoneNameRef = useRef<string>('')
   const hasInitialPanRef = useRef(false)
+  const zoneAudioRef = useRef<HTMLAudioElement | null>(null)
+  const zoneLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const zoneAudioFadeRef = useRef<number | null>(null)
+  const zoneAudioPlayingRef = useRef<string | null>(null)
 
   useEffect(() => {
     loadCalibrationPoints()
@@ -363,6 +370,168 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     return 20
   }
 
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+  }
+
+  const playTriggerSound = () => {
+    stopAudio()
+    
+    const audioPath = '/audio/trigger.mp3'
+    
+    try {
+      audioRef.current = new Audio(audioPath)
+      audioRef.current.volume = 0.5
+      audioRef.current.play().catch(error => {
+        console.warn('Audio playback failed:', error)
+        playFallbackSound()
+      })
+    } catch (error) {
+      console.warn('Audio playback failed:', error)
+      playFallbackSound()
+    }
+  }
+
+  const playFallbackSound = () => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      }
+      const ctx = audioContextRef.current
+      if (ctx.state === 'suspended') {
+        ctx.resume()
+      }
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime)
+      oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.1)
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4)
+      oscillator.start(ctx.currentTime)
+      oscillator.stop(ctx.currentTime + 0.4)
+    } catch (error) {
+      console.warn('Fallback audio playback failed:', error)
+    }
+  }
+
+  // ===== 区域音频管理 =====
+  // 校准点名称 → 音频路径映射
+  const zoneAudioMap: Record<string, string> = {
+    '卧室': bedroomAudioSrc,
+  }
+
+  const startZoneAudio = (pointName: string) => {
+    const audioSrc = zoneAudioMap[pointName]
+    if (!audioSrc) return
+
+    // 停止已有音频
+    stopZoneAudioImmediate()
+
+    const audio = new Audio(audioSrc)
+    audio.loop = true
+    audio.volume = 0.8
+    zoneAudioRef.current = audio
+    zoneAudioPlayingRef.current = pointName
+
+    audio.play().catch(error => {
+      console.warn('Zone audio play failed (may require user interaction):', error)
+      // 保留 audio 元素，下次定位更新时会重新尝试
+    })
+    console.log(`🎵 开始播放区域音频: ${pointName}`)
+  }
+
+  const stopZoneAudioImmediate = () => {
+    // 清除离开计时器
+    if (zoneLeaveTimerRef.current) {
+      clearTimeout(zoneLeaveTimerRef.current)
+      zoneLeaveTimerRef.current = null
+    }
+    // 清除淡出动画
+    if (zoneAudioFadeRef.current) {
+      cancelAnimationFrame(zoneAudioFadeRef.current)
+      zoneAudioFadeRef.current = null
+    }
+    // 立即停止音频
+    if (zoneAudioRef.current) {
+      zoneAudioRef.current.pause()
+      zoneAudioRef.current.currentTime = 0
+      zoneAudioRef.current = null
+    }
+    zoneAudioPlayingRef.current = null
+  }
+
+  const fadeOutAndStopZoneAudio = () => {
+    const audio = zoneAudioRef.current
+    if (!audio) {
+      stopZoneAudioImmediate()
+      return
+    }
+
+    const duration = 500
+    const startVolume = audio.volume
+    const startTime = Date.now()
+
+    const fade = () => {
+      const elapsed = Date.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      audio.volume = Math.max(0, startVolume * (1 - progress))
+
+      if (progress < 1) {
+        zoneAudioFadeRef.current = requestAnimationFrame(fade)
+      } else {
+        audio.pause()
+        audio.currentTime = 0
+        audio.volume = startVolume
+        zoneAudioRef.current = null
+        zoneAudioPlayingRef.current = null
+        zoneAudioFadeRef.current = null
+        console.log('🔇 区域音频已淡出停止')
+      }
+    }
+    fade()
+  }
+
+  const handleZoneAudioEnter = (pointName: string) => {
+    const audioSrc = zoneAudioMap[pointName]
+    if (!audioSrc) return
+
+    // 清除离开计时器（用户返回范围内）
+    if (zoneLeaveTimerRef.current) {
+      clearTimeout(zoneLeaveTimerRef.current)
+      zoneLeaveTimerRef.current = null
+      console.log(`🔄 用户返回区域 ${pointName}，取消离开计时器`)
+    }
+
+    // 如果当前已在播放该区域的音频，不做任何操作
+    if (zoneAudioPlayingRef.current === pointName && zoneAudioRef.current) return
+
+    // 从头开始播放
+    startZoneAudio(pointName)
+  }
+
+  const handleZoneAudioLeave = (pointName: string) => {
+    const audioSrc = zoneAudioMap[pointName]
+    if (!audioSrc) return
+
+    // 音频继续播放，启动10s倒计时
+    console.log(`⏰ 离开区域 ${pointName}，10秒后停止音频...`)
+
+    if (zoneLeaveTimerRef.current) {
+      clearTimeout(zoneLeaveTimerRef.current)
+    }
+
+    zoneLeaveTimerRef.current = setTimeout(() => {
+      fadeOutAndStopZoneAudio()
+      zoneLeaveTimerRef.current = null
+    }, 10000)
+  }
+  // ===== 区域音频管理结束 =====
+
   const kalmanFilter = (lng: number, lat: number, accuracy: number) => {
     const R = accuracy * accuracy
 
@@ -586,10 +755,27 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     if (foundZone) {
       if (foundZone.name !== currentZoneNameRef.current) {
+        const prevZone = currentZoneNameRef.current
+        // 如果之前在其他有音频的区域，取消该区域的离开计时并停止音频
+        if (prevZone && zoneAudioMap[prevZone]) {
+          if (zoneLeaveTimerRef.current) {
+            clearTimeout(zoneLeaveTimerRef.current)
+            zoneLeaveTimerRef.current = null
+          }
+          if (zoneAudioPlayingRef.current === prevZone) {
+            stopZoneAudioImmediate()
+          }
+        }
         setCurrentZoneName(foundZone.name)
         setShowTriggerText(true)
         setIsInZone(true)
         lastTriggeredZoneRef.current = foundZone.name
+        // 区域音频区域不播放提示音，音频本身即为提示
+        if (!zoneAudioMap[foundZone.name]) {
+          playTriggerSound()
+        }
+        // 进入区域触发音频播放
+        handleZoneAudioEnter(foundZone.name)
       }
     } else if (currentZoneNameRef.current) {
       const leaveThreshold = triggerRadius + 5
@@ -602,10 +788,16 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         }
       }
       if (!isStillInAnyZone) {
+        const leftZone = currentZoneNameRef.current
         setCurrentZoneName('')
         setShowTriggerText(false)
         setIsInZone(false)
         lastTriggeredZoneRef.current = null
+        stopAudio()
+        // 处理区域音频离开逻辑
+        if (zoneAudioMap[leftZone]) {
+          handleZoneAudioLeave(leftZone)
+        }
       }
     }
   }
@@ -726,6 +918,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       if (interpolationRef.current) {
         clearInterval(interpolationRef.current)
         interpolationRef.current = null
+      }
+      // 清理区域音频
+      stopZoneAudioImmediate()
+      if (zoneAudioFadeRef.current) {
+        cancelAnimationFrame(zoneAudioFadeRef.current)
+        zoneAudioFadeRef.current = null
       }
     }
   }, [])
