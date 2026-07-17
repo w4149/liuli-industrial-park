@@ -71,6 +71,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const nativeWatchIdRef = useRef<number | null>(null)
   const amapWatchIdRef = useRef<number | null>(null)
   const visibilityHandlerRef = useRef<(() => void) | null>(null)
+  // 心跳检测：发现 watcher 静默失效时自动重启
+  const healthCheckRef = useRef<number | null>(null)
+  const lastPositionTimeRef = useRef<number>(0)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
@@ -704,6 +707,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   }
 
   const handlePositionUpdate = (position: GeolocationPosition, isGCJ02: boolean = false) => {
+    lastPositionTimeRef.current = Date.now()  // 记录更新时间，用于心跳检测
     let lng = position.coords.longitude
     let lat = position.coords.latitude
     const accuracy = position.coords.accuracy
@@ -847,6 +851,28 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       clearInterval(nativeFallbackRef.current)
       nativeFallbackRef.current = null
     }
+    // 停止心跳检测
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current)
+      healthCheckRef.current = null
+    }
+  }
+
+  // 心跳检测：每15s检查一次，如果45s内没有位置更新则重启 watcher
+  const startHealthCheck = () => {
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current)
+    }
+    lastPositionTimeRef.current = Date.now()
+
+    healthCheckRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - lastPositionTimeRef.current
+      if (elapsed > 45000) {
+        console.warn(`⚠️ 定位心跳超时 (${Math.floor(elapsed / 1000)}s 无更新)，重启 watcher`)
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'heartbeat restart' }))
+        startWatchingPosition()
+      }
+    }, 15000)
   }
 
   const startNativeWatch = () => {
@@ -976,6 +1002,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const startWatchingPosition = () => {
     stopAllWatchers()
     setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting watch' }))
+
+    // 启动心跳检测（无论哪种 watcher 都需要）
+    startHealthCheck()
 
     const AMap = (window as any).AMap
 
@@ -1122,7 +1151,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     lastPositionRef.current = { lng: gcj02Lng, lat: gcj02Lat }
 
-    startWatchingPosition()
+    // 仅在 watcher 未运行时才启动（避免重复重启已有的 watcher）
+    if (nativeWatchIdRef.current === null && amapWatchIdRef.current === null && !nativeFallbackRef.current && !amapIntervalRef.current) {
+      startWatchingPosition()
+    }
   }
 
   const handleLocate = () => {
@@ -1131,6 +1163,20 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     setIsLocating(true)
     setLocationStatus('locating')
+
+    // 策略1：如果 watcher 已有近期位置（<15s），直接使用，无冲突
+    const recentPosition = lastPositionRef.current
+    const timeSinceUpdate = Date.now() - lastPositionTimeRef.current
+    if (recentPosition && timeSinceUpdate < 15000) {
+      console.log('✅ 使用 watcher 缓存位置，无需重新定位')
+      handleLocationSuccess(recentPosition.lng, recentPosition.lat, 'amap')
+      setIsLocating(false)
+      return
+    }
+
+    // 策略2：没有缓存位置，暂停 watcher → 单次定位 → 恢复 watcher
+    console.log('📍 无缓存位置，执行单次定位...')
+    stopAllWatchers()
 
     if (userMarkerRef.current) {
       map.remove(userMarkerRef.current)
@@ -1141,11 +1187,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       console.error('Location error:', error)
       setIsLocating(false)
       setLocationStatus('failed')
-      
-      const env = (window as any).__ENV__ || {}
-      if (!env.AMAP_SECRET_KEY && !process.env.AMAP_SECRET_KEY) {
-        console.warn('⚠️ AMAP_SECRET_KEY is not configured. Geolocation may fail in production.')
-      }
+      // 即使失败也恢复 watcher
+      startWatchingPosition()
     }
 
     const tryNativeGeolocation = () => {
@@ -1163,33 +1206,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             },
             {
               enableHighAccuracy: true,
-              timeout: 5000,
-              maximumAge: 0,
+              timeout: 8000,
+              maximumAge: 5000,  // 接受5s缓存，避免强制 GPS 刷新
             }
           )
         } else {
           reject({ source: 'native', error: new Error('Geolocation API not supported') })
-        }
-      })
-    }
-
-    const tryTaroGeolocation = () => {
-      return new Promise<{ lng: number; lat: number }>((resolve, reject) => {
-        try {
-          Taro.getLocation({
-            type: 'gcj02',
-            success: (res) => {
-              resolve({
-                lng: res.longitude,
-                lat: res.latitude,
-              })
-            },
-            fail: (error) => {
-              reject({ source: 'taro', error })
-            },
-          })
-        } catch (e) {
-          reject({ source: 'taro', error: e })
         }
       })
     }
@@ -1204,7 +1226,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         AMap.plugin('AMap.Geolocation', () => {
           const geolocation = new AMap.Geolocation({
             enableHighAccuracy: true,
-            timeout: 10000,
+            timeout: 8000,
             maximumAge: 5000,
             convert: true,
           })
@@ -1222,19 +1244,28 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       })
     }
 
-    tryAmapGeolocation()
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'amap'))
-      .catch((amapError) => {
-        console.warn('AMap geolocation failed, trying native...', amapError)
-        return tryNativeGeolocation()
-      })
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'native'))
-      .catch((nativeError) => {
-        console.warn('Native geolocation failed, trying Taro...', nativeError)
-        return tryTaroGeolocation()
-      })
-      .then(({ lng, lat }) => handleLocationSuccess(lng, lat, 'taro'))
-      .catch(failCallback)
+    // 先尝试 AMap（自带 GCJ02），失败再试 native
+    const doLocate = async () => {
+      try {
+        const { lng, lat } = await tryAmapGeolocation()
+        handleLocationSuccess(lng, lat, 'amap')
+        setIsLocating(false)
+        return
+      } catch (amapError) {
+        console.warn('AMap locate failed, trying native...', amapError)
+      }
+
+      try {
+        const { lng, lat } = await tryNativeGeolocation()
+        handleLocationSuccess(lng, lat, 'native')
+        setIsLocating(false)
+        return
+      } catch (nativeError) {
+        console.warn('All locate methods failed:', nativeError)
+        failCallback(nativeError)
+      }
+    }
+    doLocate()
   }
 
   if (mapError) {
