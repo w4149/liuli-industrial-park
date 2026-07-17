@@ -1,6 +1,43 @@
 import { supabase } from '@/utils/supabase'
-import { User, POI, InspirationMessage, Badge, ShopItem } from '@/types'
+import { User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
+
+const getEnv = () => {
+  if (typeof window !== 'undefined' && (window as any).__ENV__) {
+    return (window as any).__ENV__
+  }
+  return {}
+}
+const getSupabaseUrl = () => {
+  const env = getEnv()
+  return env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+}
+const getSupabaseKey = () => {
+  const env = getEnv()
+  return env.SUPABASE_KEY || process.env.SUPABASE_KEY || ''
+}
+
+// 上传文件到 Supabase Storage，返回可访问的公开 URL
+const uploadToStorage = async (bucket: string, path: string, file: File): Promise<string> => {
+  const supabaseUrl = getSupabaseUrl()
+  const supabaseKey = getSupabaseKey()
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${path}`
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${supabaseKey}`,
+      'apikey': supabaseKey,
+      'Content-Type': file.type || 'application/octet-stream',
+      'x-upsert': 'true',
+    },
+    body: file,
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || 'Upload failed')
+  }
+  return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`
+}
 
 const mockBadges: Badge[] = [
   { id: 'badge-001', name: '初访者', description: '第一次来到琉璃文创园区', pixel_image: '🎖️', condition: { type: 'visit', target: 'any', value: 1 }, rarity: 'common', created_at: new Date().toISOString() },
@@ -374,6 +411,95 @@ export const api = {
         console.warn('Supabase purchase failed:', error)
         throw error
       }
+    },
+  },
+
+  audio: {
+    // 获取某区域（校准点名称）的所有用户声音标记
+    async getMarkersForZone(zoneName: string): Promise<AudioMarker[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('audio_markers').eq('zone_name', zoneName)
+        return (data || []) as AudioMarker[]
+      } catch (error) {
+        console.warn('Get audio markers failed:', error)
+        return []
+      }
+    },
+
+    // 上传音频文件到 Storage，返回公开 URL
+    async uploadAudio(file: File, path: string): Promise<string> {
+      return uploadToStorage('audio-markers', path, file)
+    },
+
+    // 创建声音标记记录
+    async createMarker(marker: Omit<AudioMarker, 'id' | 'created_at'>): Promise<AudioMarker> {
+      const newMarker = { ...marker, created_at: new Date().toISOString() }
+      if (!useSupabase) {
+        return { ...newMarker, id: `audio-${Date.now()}` } as AudioMarker
+      }
+      try {
+        const { data } = await supabase.from('audio_markers').insert([newMarker])
+        if (data && data.length > 0) {
+          return data[0] as AudioMarker
+        }
+      } catch (error) {
+        console.warn('Create audio marker failed:', error)
+      }
+      return { ...newMarker, id: `audio-${Date.now()}` } as AudioMarker
+    },
+  },
+
+  pigeon: {
+    // 获取所有已发送信件（弹幕数据）
+    async getAllLetters(): Promise<PigeonLetter[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('pigeon_letters').eq('is_draft', 'false')
+        return (data || []) as PigeonLetter[]
+      } catch (error) {
+        console.warn('Get letters failed:', error)
+        return []
+      }
+    },
+
+    // 获取草稿
+    async getDrafts(): Promise<PigeonLetter[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('pigeon_letters').eq('is_draft', 'true')
+        return (data || []) as PigeonLetter[]
+      } catch (error) {
+        console.warn('Get drafts failed:', error)
+        return []
+      }
+    },
+
+    // 创建/发送信件
+    async createLetter(letter: Omit<PigeonLetter, 'id' | 'created_at'>): Promise<PigeonLetter> {
+      const newLetter = { ...letter, created_at: new Date().toISOString() }
+      if (!useSupabase) {
+        return { ...newLetter, id: `letter-${Date.now()}` } as PigeonLetter
+      }
+      try {
+        const { data } = await supabase.from('pigeon_letters').insert([newLetter])
+        if (data && data.length > 0) {
+          return data[0] as PigeonLetter
+        }
+      } catch (error) {
+        console.warn('Create letter failed:', error)
+      }
+      return { ...newLetter, id: `letter-${Date.now()}` } as PigeonLetter
+    },
+
+    // 保存草稿
+    async saveDraft(letter: Omit<PigeonLetter, 'id' | 'created_at' | 'is_draft'>): Promise<PigeonLetter> {
+      return this.createLetter({ ...letter, is_draft: true })
+    },
+
+    // 上传邮票图片，返回公开 URL
+    async uploadStamp(file: File, path: string): Promise<string> {
+      return uploadToStorage('pigeon-stamps', path, file)
     },
   },
 }

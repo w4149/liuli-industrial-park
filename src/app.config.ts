@@ -1,6 +1,8 @@
 export default {
   pages: [
     'pages/index/index',
+    'pages/audio/index',
+    'pages/pigeon/index',
     'pages/test/index',
     'pages/shop/index',
     'pages/profile/index',

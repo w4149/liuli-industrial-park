@@ -7,6 +7,7 @@ interface UserStore {
   shopItems: ShopItem[]
   isLoading: boolean
   error: string | null
+  triggeredAudioPoints: string[]
   setUser: (user: User | null) => void
   updateInspirationValue: (value: number) => void
   addBadge: (badge: Badge) => void
@@ -15,6 +16,7 @@ interface UserStore {
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   clearError: () => void
+  setTriggeredAudioPoints: (points: string[]) => void
 }
 
 export const useUserStore = create<UserStore>((set) => ({
@@ -23,6 +25,7 @@ export const useUserStore = create<UserStore>((set) => ({
   shopItems: [],
   isLoading: false,
   error: null,
+  triggeredAudioPoints: [],
   setUser: (user) => set({ user }),
   updateInspirationValue: (value) =>
     set((state) => ({
@@ -45,4 +48,5 @@ export const useUserStore = create<UserStore>((set) => ({
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
+  setTriggeredAudioPoints: (points) => set({ triggeredAudioPoints: points }),
 }))

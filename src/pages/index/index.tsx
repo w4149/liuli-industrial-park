@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Taro from '@tarojs/taro'
 import { View, Text, Button } from '@tarojs/components'
 import MapCanvas from '@/components/MapCanvas'
+import AudioPopup from '@/components/AudioPopup'
 import { mockPOIs } from '@/data/mockPois'
 import { mapConfig } from '@/config/map'
 import { POI } from '@/types'
@@ -11,7 +12,20 @@ const Index: React.FC = () => {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [useCustomMap, setUseCustomMap] = useState(false)
+  const [audioPoints, setAudioPoints] = useState<string[]>([])
+  const [popupVisible, setPopupVisible] = useState(false)
+  const prevPointsRef = useRef<string[]>([])
   const customMapUrl = require('@/assets/images/park-map.png')
+
+  const handleAudioPointsChange = (names: string[]) => {
+    const prev = prevPointsRef.current
+    // 从空变为非空时弹出提示
+    if (names.length > 0 && prev.length === 0) {
+      setPopupVisible(true)
+    }
+    prevPointsRef.current = names
+    setAudioPoints(names)
+  }
 
   useEffect(() => {
     const mockLogin = async () => {
@@ -85,6 +99,7 @@ const Index: React.FC = () => {
           <MapCanvas
             pois={mockPOIs}
             onPOIClick={handlePOIClick}
+            onAudioPointsChange={handleAudioPointsChange}
             customMapUrl={useCustomMap && customMapUrl ? customMapUrl : undefined}
             customMapBounds={useCustomMap ? mapConfig.customMapBounds : undefined}
           />
@@ -104,6 +119,14 @@ const Index: React.FC = () => {
           <Text className="tab-icon">🗺️</Text>
           <Text className="tab-label">地图</Text>
         </View>
+        <View className="tab-item" onClick={() => Taro.navigateTo({ url: '/pages/audio/index' })}>
+          <Text className={`tab-icon ${audioPoints.length > 0 ? 'pulse' : ''}`}>🎵</Text>
+          <Text className="tab-label">声音</Text>
+        </View>
+        <View className="tab-item" onClick={() => Taro.navigateTo({ url: '/pages/pigeon/index' })}>
+          <Text className="tab-icon">🕊️</Text>
+          <Text className="tab-label">飞鸽</Text>
+        </View>
         <View className="tab-item" onClick={() => Taro.navigateTo({ url: '/pages/shop/index' })}>
           <Text className="tab-icon">🏪</Text>
           <Text className="tab-label">商店</Text>
@@ -113,6 +136,12 @@ const Index: React.FC = () => {
           <Text className="tab-label">我的</Text>
         </View>
       </View>
+
+      <AudioPopup
+        visible={popupVisible}
+        pointNames={audioPoints}
+        onClose={() => setPopupVisible(false)}
+      />
     </View>
   )
 }

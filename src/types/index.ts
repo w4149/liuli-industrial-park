@@ -87,3 +87,28 @@ export interface UserLocation {
   accuracy: number;
   timestamp: number;
 }
+
+// 用户留下的声音标记
+export interface AudioMarker {
+  id: string;
+  user_id: string;
+  user_nickname: string;
+  zone_name: string; // 关联校准点名称
+  coordinate: { lat: number; lng: number };
+  audio_url: string; // Supabase Storage 中的路径
+  audio_name: string; // 用户给音频取的名字
+  duration: number; // 时长（秒）
+  created_at: string;
+}
+
+// 飞鸽传书信件
+export interface PigeonLetter {
+  id: string;
+  sender_name: string; // 写信人
+  receiver_name: string; // 收信人
+  content: string; // 信件内容
+  stamp_url: string; // 邮票图片（鸟照片）
+  color: string; // 信鸽独特颜色
+  is_draft: boolean; // 是否为草稿
+  created_at: string;
+}
