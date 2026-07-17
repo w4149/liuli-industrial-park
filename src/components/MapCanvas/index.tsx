@@ -20,7 +20,13 @@ interface MapCanvasProps {
 }
 
 const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsChange, customMapUrl, customMapBounds }) => {
-  const { setTriggeredAudioPoints } = useUserStore()
+  // 使用 selector 只订阅稳定的 setter，避免 triggeredAudioPoints 变化导致本组件重渲染
+  const setTriggeredAudioPoints = useUserStore((s) => s.setTriggeredAudioPoints)
+  // 用 ref 持有回调，保证初始化 effect 无需依赖它们（避免地图被反复销毁重建）
+  const onPOIClickRef = useRef(onPOIClick)
+  onPOIClickRef.current = onPOIClick
+  const onAudioPointsChangeRef = useRef(onAudioPointsChange)
+  onAudioPointsChangeRef.current = onAudioPointsChange
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const groundImageRef = useRef<any>(null)
@@ -271,8 +277,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
           marker.setContent(`<div style="width:30px;height:30px;border-radius:50%;background:${poiColors[poi.type] || '#999'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.2);">${poiIcons[poi.type] || '●'}</div>`)
 
           marker.on('click', () => {
-            if (onPOIClick) {
-              onPOIClick(poi)
+            if (onPOIClickRef.current) {
+              onPOIClickRef.current(poi)
             }
           })
 
@@ -327,7 +333,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       setLocationStatus('idle')
       initializedRef.current = false
     }
-  }, [pois, onPOIClick])
+  }, [])
 
   const wgs84ToGcj02 = (lng: number, lat: number) => {
     const PI = Math.PI
@@ -735,8 +741,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     if (changed) {
       lastAudioPointsRef.current = audioPoints
       setTriggeredAudioPoints(audioPoints)
-      if (onAudioPointsChange) {
-        onAudioPointsChange(audioPoints)
+      if (onAudioPointsChangeRef.current) {
+        onAudioPointsChangeRef.current(audioPoints)
       }
     }
   }
@@ -1191,9 +1197,14 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
 
   return (
     <div
-      ref={mapContainerRef}
       style={{ width: '100%', height: '400px', borderRadius: '16px', overflow: 'hidden', position: 'relative' }}
     >
+      {/* AMap 专属容器：由高德地图直接操作 DOM，不放置任何 React 子节点，
+          避免 React 协调与 AMap 的 DOM 操作冲突导致 removeChild/insertBefore 报错白屏 */}
+      <div
+        ref={mapContainerRef}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+      />
       {!mapLoaded && (
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.5)', color: '#fff', padding: '10px 20px', borderRadius: '20px', zIndex: 100 }}>
           🗺️ 加载地图中...
