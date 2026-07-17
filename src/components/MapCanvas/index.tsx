@@ -67,6 +67,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const lastPositionRef = useRef<{ lng: number; lat: number } | null>(null)
   const targetPositionRef = useRef<{ lng: number; lat: number } | null>(null)
   const watchFailedRef = useRef(false)
+  // 持续监听 watchPosition 的 watchId（核心定位策略）
+  const nativeWatchIdRef = useRef<number | null>(null)
+  const amapWatchIdRef = useRef<number | null>(null)
+  const visibilityHandlerRef = useRef<(() => void) | null>(null)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
@@ -660,14 +664,29 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       clearInterval(interpolationRef.current)
     }
 
-    const duration = 500
-    const steps = 30
+    // 自适应插值：根据距离决定动画时长
+    const distance = calculateDistance(startLat, startLng, endLat, endLng)
+    let duration: number
+    if (distance < 3) {
+      // <3m 直接跳转，无动画
+      updateMarkerPosition(endLng, endLat)
+      return
+    } else if (distance < 15) {
+      duration = 250  // 3-15m 快速跟手
+    } else if (distance < 50) {
+      duration = 500  // 15-50m 中速平滑
+    } else {
+      duration = 800  // >50m 慢速过渡
+    }
+
+    const steps = Math.max(10, Math.floor(duration / 16))  // ~60fps
     const stepDuration = duration / steps
     let step = 0
 
     interpolationRef.current = window.setInterval(() => {
       step++
       const progress = Math.min(step / steps, 1)
+      // ease-out-cubic: 快速启动，平滑停止
       const eased = 1 - Math.pow(1 - progress, 3)
 
       const currentLng = startLng + (endLng - startLng) * eased
@@ -808,34 +827,18 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }
 
-  const startNativeFallback = () => {
-    setDebugInfo(prev => ({ ...prev, loadStatus: 'fallback to native' }))
-    
-    if (nativeFallbackRef.current) {
-      clearInterval(nativeFallbackRef.current)
-    }
-    
-    nativeFallbackRef.current = window.setInterval(() => {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            watchFailedRef.current = false
-            handlePositionUpdate(position)
-          },
-          (intervalError) => {
-            console.warn('Native fallback error:', intervalError)
-          },
-          {
-            enableHighAccuracy: false,
-            timeout: 10000,
-            maximumAge: 0,
-          }
-        )
-      }
-    }, 1000)
-  }
+  // ===== 持续监听定位策略（替代轮询） =====
+  // 使用 watchPosition 让 OS 保持定位活跃，指示标不消失
 
-  const startWatchingPosition = () => {
+  const stopAllWatchers = () => {
+    if (nativeWatchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(nativeWatchIdRef.current)
+      nativeWatchIdRef.current = null
+    }
+    if (amapWatchIdRef.current !== null) {
+      try { navigator.geolocation.clearWatch(amapWatchIdRef.current) } catch (e) { /* ignore */ }
+      amapWatchIdRef.current = null
+    }
     if (amapIntervalRef.current) {
       clearInterval(amapIntervalRef.current)
       amapIntervalRef.current = null
@@ -844,86 +847,192 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       clearInterval(nativeFallbackRef.current)
       nativeFallbackRef.current = null
     }
+  }
 
-    setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting amap' }))
-
-    const AMap = (window as any).AMap
-    if (!AMap) {
-      startNativeFallback()
-      return
+  const startNativeWatch = () => {
+    if (!('geolocation' in navigator)) {
+      console.warn('Native geolocation not supported')
+      return false
     }
+
+    if (nativeWatchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(nativeWatchIdRef.current)
+    }
+
+    let consecutiveErrors = 0
+
+    nativeWatchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        consecutiveErrors = 0
+        watchFailedRef.current = false
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'native watch ✓', watchRunning: true }))
+        handlePositionUpdate(position)
+      },
+      (error) => {
+        consecutiveErrors++
+        console.warn(`Native watchPosition error (#${consecutiveErrors}):`, error.code, error.message)
+
+        if (consecutiveErrors >= 5) {
+          console.warn('Native watch too many errors, falling back to polling')
+          if (nativeWatchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(nativeWatchIdRef.current)
+            nativeWatchIdRef.current = null
+          }
+          startPollingFallback()
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 2000,
+      }
+    )
+
+    setDebugInfo(prev => ({ ...prev, loadStatus: 'native watch started', watchRunning: true }))
+    return true
+  }
+
+  const startAmapWatch = () => {
+    const AMap = (window as any).AMap
+    if (!AMap) return false
 
     AMap.plugin('AMap.Geolocation', () => {
       const geolocation = new AMap.Geolocation({
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 5000,
+        timeout: 10000,
+        maximumAge: 2000,
         convert: true,
+        showButton: false,
+        showMarker: false,
+        showCircle: false,
+        panToLocation: false,
       })
 
       let amapFailCount = 0
 
-      const updatePosition = () => {
-        geolocation.getCurrentPosition((status: string, result: any) => {
-          if (status === 'complete' && result.position) {
-            amapFailCount = 0
-            watchFailedRef.current = false
-            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap polling' }))
-            
-            const position = {
-              coords: {
-                longitude: result.position.lng,
-                latitude: result.position.lat,
-                accuracy: result.accuracy || 10,
-              }
-            }
-            
-            handlePositionUpdate(position as unknown as GeolocationPosition, true)
-            
-            if (nativeFallbackRef.current) {
-              clearInterval(nativeFallbackRef.current)
-              nativeFallbackRef.current = null
-            }
-          } else {
-            console.warn('AMap geolocation error:', status, result)
-            amapFailCount++
-            
-            if (amapFailCount >= 3) {
-              setDebugInfo(prev => ({ ...prev, loadStatus: 'amap failed, fallback' }))
-              watchFailedRef.current = true
-              if (amapIntervalRef.current) {
-                clearInterval(amapIntervalRef.current)
-                amapIntervalRef.current = null
-              }
-              if (!nativeFallbackRef.current) {
-                startNativeFallback()
-              }
-            } else {
-              setDebugInfo(prev => ({ ...prev, loadStatus: 'amap retry ' + amapFailCount }))
+      amapWatchIdRef.current = geolocation.watchPosition((status: string, result: any) => {
+        if (status === 'complete' && result.position) {
+          amapFailCount = 0
+          watchFailedRef.current = false
+          setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watch ✓' }))
+
+          const position = {
+            coords: {
+              longitude: result.position.lng,
+              latitude: result.position.lat,
+              accuracy: result.accuracy || 10,
             }
           }
-        })
-      }
+          handlePositionUpdate(position as unknown as GeolocationPosition, true)
+        } else {
+          amapFailCount++
+          console.warn(`AMap watchPosition error (#${amapFailCount}):`, status)
 
-      updatePosition()
-      
-      amapIntervalRef.current = window.setInterval(updatePosition, 1000)
+          if (amapFailCount >= 3) {
+            console.warn('AMap watch failed, falling back to native watch')
+            if (amapWatchIdRef.current !== null) {
+              try { navigator.geolocation.clearWatch(amapWatchIdRef.current) } catch (e) { /* ignore */ }
+              amapWatchIdRef.current = null
+            }
+            startNativeWatch()
+          }
+        }
+      })
+
+      setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watch started' }))
     })
+
+    return true
   }
 
+  const startPollingFallback = () => {
+    setDebugInfo(prev => ({ ...prev, loadStatus: 'polling fallback' }))
+
+    if (nativeFallbackRef.current) {
+      clearInterval(nativeFallbackRef.current)
+    }
+
+    nativeFallbackRef.current = window.setInterval(() => {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            watchFailedRef.current = false
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'polling ✓' }))
+            handlePositionUpdate(position)
+          },
+          (error) => {
+            console.warn('Polling fallback error:', error)
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 5000,
+          }
+        )
+      }
+    }, 3000)
+  }
+
+  const startWatchingPosition = () => {
+    stopAllWatchers()
+    setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting watch' }))
+
+    const AMap = (window as any).AMap
+
+    // 优先级：AMap watch > native watch > polling fallback
+    if (AMap) {
+      const started = startAmapWatch()
+      if (started) return
+    }
+
+    const started = startNativeWatch()
+    if (started) return
+
+    startPollingFallback()
+  }
+
+  const setupVisibilityHandler = () => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('📱 页面回到前台，重新激活定位')
+        if (nativeWatchIdRef.current === null && amapWatchIdRef.current === null && !nativeFallbackRef.current && !amapIntervalRef.current) {
+          startWatchingPosition()
+        } else {
+          // 已有 watcher，做一次即时定位刷新
+          if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                handlePositionUpdate(position)
+                setDebugInfo(prev => ({ ...prev, loadStatus: 'foreground refresh ✓' }))
+              },
+              () => { /* 静默失败 */ },
+              { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            )
+          }
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handler)
+    visibilityHandlerRef.current = handler
+  }
+  // ===== 持续监听定位策略结束 =====
+
   useEffect(() => {
+    // 设置页面可见性监听
+    setupVisibilityHandler()
+
     return () => {
-      if (amapIntervalRef.current) {
-        clearInterval(amapIntervalRef.current)
-        amapIntervalRef.current = null
-      }
-      if (nativeFallbackRef.current) {
-        clearInterval(nativeFallbackRef.current)
-        nativeFallbackRef.current = null
-      }
+      // 清除所有定位监听
+      stopAllWatchers()
       if (interpolationRef.current) {
         clearInterval(interpolationRef.current)
         interpolationRef.current = null
+      }
+      // 清除 visibility 监听
+      if (visibilityHandlerRef.current) {
+        document.removeEventListener('visibilitychange', visibilityHandlerRef.current)
+        visibilityHandlerRef.current = null
       }
       // 清理区域音频
       stopZoneAudioImmediate()
