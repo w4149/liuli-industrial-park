@@ -2,6 +2,9 @@ import React, { useRef, useEffect, useState } from 'react'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { POI } from '@/types'
 import { supabaseClient } from '@/utils/supabase/client'
+import marketAudioSrc from '@/assets/audio/fdanni-song.m4a'
+import chimneyAudioSrc from '@/assets/audio/longze-chimney.mp3'
+import pondAudioSrc from '@/assets/audio/xingyu-pond.m4a'
 import bedroomAudioSrc from '@/assets/audio/fifi-Jasmine1.m4a'
 
 interface MapCanvasProps {
@@ -423,6 +426,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   // 校准点名称 → 音频路径映射
   const zoneAudioMap: Record<string, string> = {
     '卧室': bedroomAudioSrc,
+    '市集': marketAudioSrc,
+    '烟囱': chimneyAudioSrc,
+    '水池': pondAudioSrc,
   }
 
   const startZoneAudio = (pointName: string) => {
