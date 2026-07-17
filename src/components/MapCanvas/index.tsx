@@ -831,8 +831,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }
 
-  // ===== 持续监听定位策略（替代轮询） =====
-  // 使用 watchPosition 让 OS 保持定位活跃，指示标不消失
+  // ===== 持续监听定位策略 =====
+  // 核心：native watchPosition + polling 并行运行，互为备份
 
   const stopAllWatchers = () => {
     if (nativeWatchIdRef.current !== null) {
@@ -851,35 +851,42 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       clearInterval(nativeFallbackRef.current)
       nativeFallbackRef.current = null
     }
-    // 停止心跳检测
     if (healthCheckRef.current) {
       clearInterval(healthCheckRef.current)
       healthCheckRef.current = null
     }
   }
 
-  // 心跳检测：每15s检查一次，如果45s内没有位置更新则重启 watcher
+  // 独立追踪 watcher 的更新时间（与 polling 分开）
+  const lastWatcherUpdateRef = useRef<number>(0)
+
+  // 心跳检测：监控 watcher 是否真正在工作
+  // 如果 watcher 30s 无更新，即使 polling 还在跑，也重启 watcher
   const startHealthCheck = () => {
     if (healthCheckRef.current) {
       clearInterval(healthCheckRef.current)
     }
-    lastPositionTimeRef.current = Date.now()
+    lastWatcherUpdateRef.current = Date.now()
 
     healthCheckRef.current = window.setInterval(() => {
-      const elapsed = Date.now() - lastPositionTimeRef.current
-      if (elapsed > 45000) {
-        console.warn(`⚠️ 定位心跳超时 (${Math.floor(elapsed / 1000)}s 无更新)，重启 watcher`)
-        setDebugInfo(prev => ({ ...prev, loadStatus: 'heartbeat restart' }))
-        startWatchingPosition()
+      const watcherSilent = Date.now() - lastWatcherUpdateRef.current
+      if (watcherSilent > 30000 && nativeWatchIdRef.current !== null) {
+        console.warn(`⚠️ Watcher 静默 ${Math.floor(watcherSilent / 1000)}s，重启 watcher`)
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'watcher restart' }))
+        // 只重启 watcher，不清除 polling
+        if (nativeWatchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(nativeWatchIdRef.current)
+          nativeWatchIdRef.current = null
+        }
+        startNativeWatch()
+        lastWatcherUpdateRef.current = Date.now()
       }
-    }, 15000)
+    }, 10000)
   }
 
+  // Native watchPosition — 主力定位
   const startNativeWatch = () => {
-    if (!('geolocation' in navigator)) {
-      console.warn('Native geolocation not supported')
-      return false
-    }
+    if (!('geolocation' in navigator)) return false
 
     if (nativeWatchIdRef.current !== null) {
       navigator.geolocation.clearWatch(nativeWatchIdRef.current)
@@ -891,26 +898,20 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       (position) => {
         consecutiveErrors = 0
         watchFailedRef.current = false
+        lastWatcherUpdateRef.current = Date.now()
         setDebugInfo(prev => ({ ...prev, loadStatus: 'native watch ✓', watchRunning: true }))
         handlePositionUpdate(position)
       },
       (error) => {
         consecutiveErrors++
-        console.warn(`Native watchPosition error (#${consecutiveErrors}):`, error.code, error.message)
-
-        if (consecutiveErrors >= 5) {
-          console.warn('Native watch too many errors, falling back to polling')
-          if (nativeWatchIdRef.current !== null) {
-            navigator.geolocation.clearWatch(nativeWatchIdRef.current)
-            nativeWatchIdRef.current = null
-          }
-          startPollingFallback()
-        }
+        console.warn(`Native watch error (#${consecutiveErrors}):`, error.code, error.message)
+        // 不在这里停止 watcher —— watchPosition 可能会自行恢复
+        // 如果持续失败，心跳检测会处理重启
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 2000,
+        timeout: 20000,    // 宽松超时，不急于报错
+        maximumAge: 3000,  // 允许3s缓存
       }
     )
 
@@ -918,62 +919,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     return true
   }
 
-  const startAmapWatch = () => {
-    const AMap = (window as any).AMap
-    if (!AMap) return false
-
-    AMap.plugin('AMap.Geolocation', () => {
-      const geolocation = new AMap.Geolocation({
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 2000,
-        convert: true,
-        showButton: false,
-        showMarker: false,
-        showCircle: false,
-        panToLocation: false,
-      })
-
-      let amapFailCount = 0
-
-      amapWatchIdRef.current = geolocation.watchPosition((status: string, result: any) => {
-        if (status === 'complete' && result.position) {
-          amapFailCount = 0
-          watchFailedRef.current = false
-          setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watch ✓' }))
-
-          const position = {
-            coords: {
-              longitude: result.position.lng,
-              latitude: result.position.lat,
-              accuracy: result.accuracy || 10,
-            }
-          }
-          handlePositionUpdate(position as unknown as GeolocationPosition, true)
-        } else {
-          amapFailCount++
-          console.warn(`AMap watchPosition error (#${amapFailCount}):`, status)
-
-          if (amapFailCount >= 3) {
-            console.warn('AMap watch failed, falling back to native watch')
-            if (amapWatchIdRef.current !== null) {
-              try { navigator.geolocation.clearWatch(amapWatchIdRef.current) } catch (e) { /* ignore */ }
-              amapWatchIdRef.current = null
-            }
-            startNativeWatch()
-          }
-        }
-      })
-
-      setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watch started' }))
-    })
-
-    return true
-  }
-
-  const startPollingFallback = () => {
-    setDebugInfo(prev => ({ ...prev, loadStatus: 'polling fallback' }))
-
+  // Polling 保底层 — 始终与 watcher 并行运行
+  const startPollingBackup = () => {
     if (nativeFallbackRef.current) {
       clearInterval(nativeFallbackRef.current)
     }
@@ -983,41 +930,92 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         navigator.geolocation.getCurrentPosition(
           (position) => {
             watchFailedRef.current = false
-            setDebugInfo(prev => ({ ...prev, loadStatus: 'polling ✓' }))
+            // 只在 watcher 无近期更新时，显示 polling 状态
+            const watcherSilent = Date.now() - lastWatcherUpdateRef.current
+            if (watcherSilent > 8000) {
+              setDebugInfo(prev => ({ ...prev, loadStatus: 'polling backup ✓' }))
+            }
             handlePositionUpdate(position)
           },
-          (error) => {
-            console.warn('Polling fallback error:', error)
-          },
+          () => { /* 静默失败，watcher 可能在工作 */ },
           {
             enableHighAccuracy: false,
-            timeout: 10000,
-            maximumAge: 5000,
+            timeout: 8000,
+            maximumAge: 3000,
           }
         )
       }
-    }, 3000)
+    }, 5000)  // 5s 间隔，平衡更新频率与电量
   }
 
+  // AMap watch — 异步增强（如果可用则提供 GCJ02 直出）
+  const tryStartAmapWatch = () => {
+    const AMap = (window as any).AMap
+    if (!AMap) return
+
+    AMap.plugin('AMap.Geolocation', () => {
+      try {
+        const geolocation = new AMap.Geolocation({
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 3000,
+          convert: true,
+          showButton: false,
+          showMarker: false,
+          showCircle: false,
+          panToLocation: false,
+        })
+
+        let amapFailCount = 0
+
+        amapWatchIdRef.current = geolocation.watchPosition((status: string, result: any) => {
+          if (status === 'complete' && result.position) {
+            amapFailCount = 0
+            lastWatcherUpdateRef.current = Date.now()
+            setDebugInfo(prev => ({ ...prev, loadStatus: 'amap watch ✓' }))
+
+            const position = {
+              coords: {
+                longitude: result.position.lng,
+                latitude: result.position.lat,
+                accuracy: result.accuracy || 10,
+              }
+            }
+            handlePositionUpdate(position as unknown as GeolocationPosition, true)
+          } else {
+            amapFailCount++
+            if (amapFailCount >= 5) {
+              // AMap watch 不可靠，清除它，依赖 native watch + polling
+              console.warn('AMap watch unreliable, disabling')
+              if (amapWatchIdRef.current !== null) {
+                try { navigator.geolocation.clearWatch(amapWatchIdRef.current) } catch (e) { /* ignore */ }
+                amapWatchIdRef.current = null
+              }
+            }
+          }
+        })
+      } catch (e) {
+        console.warn('AMap watch setup failed:', e)
+      }
+    })
+  }
+
+  // 启动全部定位机制：watch + polling 并行
   const startWatchingPosition = () => {
     stopAllWatchers()
-    setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting watch' }))
+    setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting all' }))
 
-    // 启动心跳检测（无论哪种 watcher 都需要）
+    // 1. 启动 native watchPosition（主力）
+    startNativeWatch()
+
+    // 2. 启动 polling 保底层（始终运行）
+    startPollingBackup()
+
+    // 3. 异步尝试 AMap watch（增强，不依赖）
+    tryStartAmapWatch()
+
+    // 4. 启动心跳检测（监控 watcher 健康度）
     startHealthCheck()
-
-    const AMap = (window as any).AMap
-
-    // 优先级：AMap watch > native watch > polling fallback
-    if (AMap) {
-      const started = startAmapWatch()
-      if (started) return
-    }
-
-    const started = startNativeWatch()
-    if (started) return
-
-    startPollingFallback()
   }
 
   const setupVisibilityHandler = () => {
