@@ -295,7 +295,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         map.on('complete', () => {
           setTimeout(() => {
             setMapLoaded(true)
-            handleLocate()
+            // 只启动持续监听，不立即 handleLocate（避免竞态杀死 watcher）
+            // 首次位置由 watcher/polling 自然触发，handlePositionUpdate 处理居中
             startWatchingPosition()
           }, 500)
         })
@@ -349,8 +350,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       return ret
     }
 
-    const dLat = transformLat(lng - 105.0, lat - 35.0)
-    const dLng = transformLng(lng - 105.0, lat - 35.0)
+    let dLat = transformLat(lng - 105.0, lat - 35.0)
+    let dLng = transformLng(lng - 105.0, lat - 35.0)
     const radLat = lat / 180.0 * PI
     let magic = Math.sin(radLat)
     magic = 1 - ee * magic * magic
@@ -739,6 +740,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
       if (!hasInitialPanRef.current) {
         mapRef.current.panTo([targetLng, targetLat])
+        mapRef.current.setZoom(18)
         hasInitialPanRef.current = true
       }
     }
@@ -787,14 +789,15 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       }
     }
 
-    setDebugInfo({
+    setDebugInfo(prev => ({
+      ...prev,
       watchRunning: !watchFailedRef.current,
       pointsCount: points.length,
       triggerRadius,
       nearestPoint,
       nearestDistance: nearestDistance === Infinity ? null : Math.round(nearestDistance),
       lastUpdate: Date.now(),
-    })
+    }))
 
     if (foundZone) {
       if (foundZone.name !== currentZoneNameRef.current) {
@@ -846,9 +849,14 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   }
 
   // ===== 持续监听定位策略 =====
-  // 核心：native watchPosition + polling 并行运行，互为备份
+  // 核心：native watchPosition（主力）+ polling（永不摧毁的保底）
 
-  const stopAllWatchers = () => {
+  // 独立追踪 watcher 和 polling 的更新时间
+  const lastWatcherUpdateRef = useRef<number>(0)
+  const lastPollingUpdateRef = useRef<number>(0)
+
+  // stopWatchers：只停止 watcher 相关，不动 polling
+  const stopWatchers = () => {
     if (nativeWatchIdRef.current !== null) {
       navigator.geolocation.clearWatch(nativeWatchIdRef.current)
       nativeWatchIdRef.current = null
@@ -861,6 +869,11 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       clearInterval(amapIntervalRef.current)
       amapIntervalRef.current = null
     }
+  }
+
+  // stopAllWatchers：完全停止（仅用于组件卸载清理）
+  const stopAllWatchers = () => {
+    stopWatchers()
     if (nativeFallbackRef.current) {
       clearInterval(nativeFallbackRef.current)
       nativeFallbackRef.current = null
@@ -871,29 +884,34 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     }
   }
 
-  // 独立追踪 watcher 的更新时间（与 polling 分开）
-  const lastWatcherUpdateRef = useRef<number>(0)
-
-  // 心跳检测：监控 watcher 是否真正在工作
-  // 如果 watcher 30s 无更新，即使 polling 还在跑，也重启 watcher
+  // 心跳检测：三重保障
   const startHealthCheck = () => {
     if (healthCheckRef.current) {
       clearInterval(healthCheckRef.current)
     }
     lastWatcherUpdateRef.current = Date.now()
+    lastPollingUpdateRef.current = Date.now()
 
     healthCheckRef.current = window.setInterval(() => {
-      const watcherSilent = Date.now() - lastWatcherUpdateRef.current
-      if (watcherSilent > 30000 && nativeWatchIdRef.current !== null) {
-        console.warn(`⚠️ Watcher 静默 ${Math.floor(watcherSilent / 1000)}s，重启 watcher`)
+      const now = Date.now()
+      const watcherSilent = now - lastWatcherUpdateRef.current
+      const pollingSilent = now - lastPollingUpdateRef.current
+
+      // 情况1：watcher 静默 >30s → 重启 watcher
+      if (watcherSilent > 30000) {
+        console.warn(`⚠️ Watcher 静默 ${Math.floor(watcherSilent / 1000)}s，重启`)
         setDebugInfo(prev => ({ ...prev, loadStatus: 'watcher restart' }))
-        // 只重启 watcher，不清除 polling
-        if (nativeWatchIdRef.current !== null) {
-          navigator.geolocation.clearWatch(nativeWatchIdRef.current)
-          nativeWatchIdRef.current = null
-        }
+        stopWatchers()
         startNativeWatch()
-        lastWatcherUpdateRef.current = Date.now()
+        lastWatcherUpdateRef.current = now
+      }
+
+      // 情况2：polling 也静默 >45s → 重启 polling
+      if (pollingSilent > 45000) {
+        console.warn(`⚠️ Polling 静默 ${Math.floor(pollingSilent / 1000)}s，重启`)
+        setDebugInfo(prev => ({ ...prev, loadStatus: 'polling restart' }))
+        startPollingBackup()
+        lastPollingUpdateRef.current = now
       }
     }, 10000)
   }
@@ -906,26 +924,21 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       navigator.geolocation.clearWatch(nativeWatchIdRef.current)
     }
 
-    let consecutiveErrors = 0
-
     nativeWatchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        consecutiveErrors = 0
         watchFailedRef.current = false
         lastWatcherUpdateRef.current = Date.now()
         setDebugInfo(prev => ({ ...prev, loadStatus: 'native watch ✓', watchRunning: true }))
         handlePositionUpdate(position)
       },
       (error) => {
-        consecutiveErrors++
-        console.warn(`Native watch error (#${consecutiveErrors}):`, error.code, error.message)
-        // 不在这里停止 watcher —— watchPosition 可能会自行恢复
-        // 如果持续失败，心跳检测会处理重启
+        console.warn(`Native watch error:`, error.code, error.message)
+        // 不主动清除 — 心跳检测会处理
       },
       {
         enableHighAccuracy: true,
-        timeout: 20000,    // 宽松超时，不急于报错
-        maximumAge: 3000,  // 允许3s缓存
+        timeout: 20000,
+        maximumAge: 3000,
       }
     )
 
@@ -933,7 +946,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
     return true
   }
 
-  // Polling 保底层 — 始终与 watcher 并行运行
+  // Polling 保底层 — 永不摧毁，始终运行
   const startPollingBackup = () => {
     if (nativeFallbackRef.current) {
       clearInterval(nativeFallbackRef.current)
@@ -944,25 +957,25 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         navigator.geolocation.getCurrentPosition(
           (position) => {
             watchFailedRef.current = false
-            // 只在 watcher 无近期更新时，显示 polling 状态
+            lastPollingUpdateRef.current = Date.now()
             const watcherSilent = Date.now() - lastWatcherUpdateRef.current
             if (watcherSilent > 8000) {
-              setDebugInfo(prev => ({ ...prev, loadStatus: 'polling backup ✓' }))
+              setDebugInfo(prev => ({ ...prev, loadStatus: 'polling ✓' }))
             }
             handlePositionUpdate(position)
           },
-          () => { /* 静默失败，watcher 可能在工作 */ },
+          () => { /* 静默失败 */ },
           {
             enableHighAccuracy: false,
-            timeout: 8000,
+            timeout: 10000,
             maximumAge: 3000,
           }
         )
       }
-    }, 5000)  // 5s 间隔，平衡更新频率与电量
+    }, 5000)
   }
 
-  // AMap watch — 异步增强（如果可用则提供 GCJ02 直出）
+  // AMap watch — 异步增强
   const tryStartAmapWatch = () => {
     const AMap = (window as any).AMap
     if (!AMap) return
@@ -999,7 +1012,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
           } else {
             amapFailCount++
             if (amapFailCount >= 5) {
-              // AMap watch 不可靠，清除它，依赖 native watch + polling
               console.warn('AMap watch unreliable, disabling')
               if (amapWatchIdRef.current !== null) {
                 try { navigator.geolocation.clearWatch(amapWatchIdRef.current) } catch (e) { /* ignore */ }
@@ -1016,19 +1028,24 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
   // 启动全部定位机制：watch + polling 并行
   const startWatchingPosition = () => {
-    stopAllWatchers()
+    // 只停 watcher，不停 polling（polling 永不摧毁）
+    stopWatchers()
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current)
+      healthCheckRef.current = null
+    }
     setDebugInfo(prev => ({ ...prev, watchRunning: true, loadStatus: 'starting all' }))
 
     // 1. 启动 native watchPosition（主力）
     startNativeWatch()
 
-    // 2. 启动 polling 保底层（始终运行）
+    // 2. 启动 polling 保底层（如果已在跑则重置间隔）
     startPollingBackup()
 
-    // 3. 异步尝试 AMap watch（增强，不依赖）
+    // 3. 异步尝试 AMap watch
     tryStartAmapWatch()
 
-    // 4. 启动心跳检测（监控 watcher 健康度）
+    // 4. 启动心跳检测
     startHealthCheck()
   }
 
@@ -1172,9 +1189,13 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
       return
     }
 
-    // 策略2：没有缓存位置，暂停 watcher → 单次定位 → 恢复 watcher
+    // 策略2：没有缓存位置，暂停 watcher → 单次定位 → 恢复（polling 不中断）
     console.log('📍 无缓存位置，执行单次定位...')
-    stopAllWatchers()
+    stopWatchers()
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current)
+      healthCheckRef.current = null
+    }
 
     if (userMarkerRef.current) {
       map.remove(userMarkerRef.current)
