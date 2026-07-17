@@ -74,6 +74,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   // 心跳检测：发现 watcher 静默失效时自动重启
   const healthCheckRef = useRef<number | null>(null)
   const lastPositionTimeRef = useRef<number>(0)
+  // 追踪连续更新间隔，用于检测后台返回后的突发更新
+  const prevUpdateTimeRef = useRef<number>(0)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
   const lastTriggeredZoneRef = useRef<string | null>(null)
@@ -743,11 +745,23 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     if (lastPositionRef.current && userMarkerRef.current) {
       const distance = calculateDistance(lastPositionRef.current.lat, lastPositionRef.current.lng, targetLat, targetLng)
+      const now = Date.now()
+      const timeSinceLastUpdate = now - prevUpdateTimeRef.current
+
       if (distance > 5) {
-        startInterpolation(lastPositionRef.current.lng, lastPositionRef.current.lat, targetLng, targetLat)
+        // 检测是否为后台返回后的"突发更新"（间隔 >2s 且距离较远）
+        if (timeSinceLastUpdate > 2000 && distance > 30) {
+          // 后台返回：直接瞬移到新位置 + 重新居中地图
+          console.log(`📍 后台返回大跳跃 ${distance.toFixed(0)}m，瞬移`)
+          updateMarkerPosition(targetLng, targetLat)
+          mapRef.current?.panTo([targetLng, targetLat])
+        } else {
+          startInterpolation(lastPositionRef.current.lng, lastPositionRef.current.lat, targetLng, targetLat)
+        }
       } else {
         updateMarkerPosition(targetLng, targetLat)
       }
+      prevUpdateTimeRef.current = now
     } else {
       updateMarkerPosition(targetLng, targetLat)
     }
@@ -1021,22 +1035,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
   const setupVisibilityHandler = () => {
     const handler = () => {
       if (document.visibilityState === 'visible') {
-        console.log('📱 页面回到前台，重新激活定位')
-        if (nativeWatchIdRef.current === null && amapWatchIdRef.current === null && !nativeFallbackRef.current && !amapIntervalRef.current) {
-          startWatchingPosition()
-        } else {
-          // 已有 watcher，做一次即时定位刷新
-          if ('geolocation' in navigator) {
-            navigator.geolocation.getCurrentPosition(
-              (position) => {
-                handlePositionUpdate(position)
-                setDebugInfo(prev => ({ ...prev, loadStatus: 'foreground refresh ✓' }))
-              },
-              () => { /* 静默失败 */ },
-              { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-            )
-          }
-        }
+        console.log('📱 页面回到前台，强制重启所有定位')
+        // 后台期间浏览器可能已静默杀死 watchPosition
+        // ref 中的 watchId 可能是过期的，必须完整重启
+        startWatchingPosition()
       }
     }
 
@@ -1149,10 +1151,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     lastPositionRef.current = { lng: gcj02Lng, lat: gcj02Lat }
 
-    // 仅在 watcher 未运行时才启动（避免重复重启已有的 watcher）
-    if (nativeWatchIdRef.current === null && amapWatchIdRef.current === null && !nativeFallbackRef.current && !amapIntervalRef.current) {
-      startWatchingPosition()
-    }
+    // handleLocate 中已 stopAllWatchers，定位完成后必须重启持续监听
+    startWatchingPosition()
   }
 
   const handleLocate = () => {
@@ -1204,8 +1204,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
             },
             {
               enableHighAccuracy: true,
-              timeout: 8000,
-              maximumAge: 5000,  // 接受5s缓存，避免强制 GPS 刷新
+              timeout: 12000,
+              maximumAge: 10000,  // 接受10s缓存，提高成功率
             }
           )
         } else {
@@ -1224,8 +1224,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
         AMap.plugin('AMap.Geolocation', () => {
           const geolocation = new AMap.Geolocation({
             enableHighAccuracy: true,
-            timeout: 8000,
-            maximumAge: 5000,
+            timeout: 12000,
+            maximumAge: 10000,
             convert: true,
           })
           geolocation.getCurrentPosition((status: string, result: any) => {
@@ -1244,6 +1244,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, customMapUrl, c
 
     // 先尝试 AMap（自带 GCJ02），失败再试 native
     const doLocate = async () => {
+      // 等待浏览器释放旧的 geolocation 通道
+      await new Promise<void>(r => setTimeout(r, 500))
+
       try {
         const { lng, lat } = await tryAmapGeolocation()
         handleLocationSuccess(lng, lat, 'amap')
