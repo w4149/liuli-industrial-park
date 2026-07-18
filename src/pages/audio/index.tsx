@@ -219,11 +219,8 @@ const AudioGarden: React.FC = () => {
   }
 
   // ===== 留下声音 =====
+  // 任何位置都可以上传，不再限制在特定音频触发区域内
   const openLeavePanel = () => {
-    if (points.length === 0) {
-      Taro.showToast({ title: '请在音频点位范围内留下声音', icon: 'none' })
-      return
-    }
     setShowLeavePanel(true)
     setLeaveStep('choose')
     setPendingBlob(null)
@@ -330,14 +327,45 @@ const AudioGarden: React.FC = () => {
   }
 
   const handleUpload = async () => {
-    if (!pendingBlob || !gps) return
+    if (!pendingBlob) return
     if (!audioName.trim()) {
       Taro.showToast({ title: '请给声音取个名字', icon: 'none' })
       return
     }
-    const zoneName = points[0]
     setUploading(true)
     try {
+      // 若尚未获取定位，先获取一次（任何位置都可上传，但仍需确认定位）
+      let currentGps = gps
+      if (!currentGps) {
+        Taro.showLoading({ title: '获取定位中...' })
+        currentGps = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
+          if (!navigator.geolocation) {
+            Taro.hideLoading()
+            Taro.showToast({ title: '浏览器不支持定位', icon: 'none' })
+            reject(new Error('no geolocation'))
+            return
+          }
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              Taro.hideLoading()
+              resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+            },
+            (err) => {
+              Taro.hideLoading()
+              console.warn('定位失败:', err)
+              Taro.showToast({ title: '定位失败，请重试', icon: 'none' })
+              reject(err)
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          )
+        }).catch(() => null)
+        if (!currentGps) {
+          setUploading(false)
+          return
+        }
+      }
+      // 关联点位：若当前处于触发区域则用区域名，否则标记为自由点
+      const zoneName = points.length > 0 ? points[0] : ''
       const ext = pendingBlob.type.includes('webm') ? 'webm' : 'audio'
       const fileName = `${Date.now()}-${Math.round(Math.random() * 1000)}.${ext}`
       const file = pendingBlob instanceof File
@@ -348,7 +376,7 @@ const AudioGarden: React.FC = () => {
         user_id: user?.id || 'guest',
         user_nickname: user?.nickname || '访客',
         zone_name: zoneName,
-        coordinate: gps,
+        coordinate: currentGps,
         audio_url: audioUrl,
         audio_name: audioName.trim(),
         duration: pendingDuration,

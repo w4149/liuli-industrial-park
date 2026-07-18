@@ -176,6 +176,14 @@ const Profile: React.FC = () => {
               <span className="action-icon">📝</span>
               <span className="action-label">隐私设置</span>
             </button>
+            <button className="action-item" onClick={() => Taro.navigateTo({ url: '/pages/bodyRecord/index' })}>
+              <span className="action-icon">🎨</span>
+              <span className="action-label">身体记录</span>
+            </button>
+            <button className="action-item" onClick={() => Taro.navigateTo({ url: '/pages/bodyProfile/index' })}>
+              <span className="action-icon">🧍</span>
+              <span className="action-label">身体档案</span>
+            </button>
             <button className="action-item" onClick={() => setShowDeveloperMode(true)}>
               <span className="action-icon">🔧</span>
               <span className="action-label">开发者模式</span>

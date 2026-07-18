@@ -4,14 +4,11 @@ import { View, Text } from '@tarojs/components'
 import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
 import { PigeonLetter } from '@/types'
+import { processStampImage } from '@/utils/imageProcess'
 import './index.scss'
 
-// 信鸽可选颜色调色板
-const COLOR_PALETTE = [
-  '#e2574c', '#f5a623', '#f8d347', '#7ed321',
-  '#4a90d9', '#667eea', '#a78bfa', '#e56cd6',
-  '#50e3c2', '#b8956a', '#ff8a80', '#90a4ae',
-]
+// 默认信鸽颜色（未选图时的占位色）
+const DEFAULT_PIGEON_COLOR = '#667eea'
 
 const TRACK_COUNT = 5
 
@@ -25,8 +22,16 @@ const Pigeon: React.FC = () => {
   const [sender, setSender] = useState('')
   const [receiver, setReceiver] = useState('')
   const [content, setContent] = useState('')
-  const [selectedColor, setSelectedColor] = useState(COLOR_PALETTE[5])
+  // 处理后的邮票：像素化 Blob + 从原图提取的主色（用作信鸽颜色）
+  const [processedStamp, setProcessedStamp] = useState<{
+    blob: Blob
+    color: string
+    previewUrl: string
+  } | null>(null)
+  const [processing, setProcessing] = useState(false)
   const [sending, setSending] = useState(false)
+  // 当前被点击暂停的信鸽 id（点击后该信鸽停止滚动，便于查看）
+  const [pausedLetterId, setPausedLetterId] = useState<string | null>(null)
 
   const stampInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -52,13 +57,13 @@ const Pigeon: React.FC = () => {
       setSender(draft.sender_name)
       setReceiver(draft.receiver_name)
       setContent(draft.content)
-      setSelectedColor(draft.color || COLOR_PALETTE[5])
     } else {
       setSender(user?.nickname || '')
       setReceiver('')
       setContent('')
-      setSelectedColor(COLOR_PALETTE[5])
     }
+    // 每次打开写信面板都清空已处理的邮票，让用户重新选择图片
+    setProcessedStamp(null)
     setShowCompose(true)
   }
 
@@ -73,12 +78,23 @@ const Pigeon: React.FC = () => {
   const handleSaveDraft = async () => {
     if (!validateFields()) return
     try {
+      let stampUrl = ''
+      if (processedStamp) {
+        // 草稿也走 Storage 上传，避免 dataURL 太长被数据库截断
+        const fileName = `draft-${Date.now()}-${Math.round(Math.random() * 1000)}.jpg`
+        const stampFile = new File(
+          [processedStamp.blob],
+          fileName,
+          { type: 'image/jpeg' }
+        )
+        stampUrl = await api.pigeon.uploadStamp(stampFile, fileName)
+      }
       await api.pigeon.saveDraft({
         sender_name: sender.trim(),
         receiver_name: receiver.trim(),
         content: content.trim(),
-        stamp_url: '',
-        color: selectedColor,
+        stamp_url: stampUrl,
+        color: processedStamp?.color || DEFAULT_PIGEON_COLOR,
       })
       Taro.showToast({ title: '已存为草稿', icon: 'success' })
       setShowCompose(false)
@@ -89,7 +105,7 @@ const Pigeon: React.FC = () => {
     }
   }
 
-  // 点击发送 → 需要先拍摄鸟照片作为邮票
+  // 点击发送 → 需要先选择图片作为邮票，图片会先被像素化压缩并提取主色
   const handleSendClick = () => {
     if (!validateFields()) return
     stampInputRef.current?.click()
@@ -98,22 +114,53 @@ const Pigeon: React.FC = () => {
   const onStampSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setProcessing(true)
+    Taro.showLoading({ title: '图像处理中...' })
+    try {
+      // 像素化压缩 + 提取主色（信鸽颜色）
+      const result = await processStampImage(file, 12)
+      setProcessedStamp(result)
+      Taro.hideLoading()
+      Taro.showToast({ title: '图片已处理，可发送', icon: 'none', duration: 1500 })
+    } catch (err) {
+      Taro.hideLoading()
+      console.warn('图像处理失败:', err)
+      Taro.showToast({ title: '图像处理失败', icon: 'none' })
+    } finally {
+      setProcessing(false)
+      if (stampInputRef.current) stampInputRef.current.value = ''
+    }
+  }
+
+  // 实际发送：使用已处理的邮票 Blob 上传
+  const handleSendNow = async () => {
+    if (!processedStamp) {
+      Taro.showToast({ title: '请先选择图片', icon: 'none' })
+      return
+    }
     setSending(true)
     Taro.showLoading({ title: '寄出中...' })
     try {
       const fileName = `${Date.now()}-${Math.round(Math.random() * 1000)}.jpg`
-      const stampUrl = await api.pigeon.uploadStamp(file, fileName)
+      // 上传像素化后的 Blob（包装为 File 以符合 API 签名）
+      const stampFile = new File(
+        [processedStamp.blob],
+        fileName,
+        { type: 'image/jpeg' }
+      )
+      const stampUrl = await api.pigeon.uploadStamp(stampFile, fileName)
       await api.pigeon.createLetter({
         sender_name: sender.trim(),
         receiver_name: receiver.trim(),
         content: content.trim(),
         stamp_url: stampUrl,
-        color: selectedColor,
+        color: processedStamp.color,
         is_draft: false,
       })
       Taro.hideLoading()
       Taro.showToast({ title: '信鸽已放飞', icon: 'success' })
       setShowCompose(false)
+      setProcessedStamp(null)
       await loadData()
     } catch (err) {
       Taro.hideLoading()
@@ -121,7 +168,6 @@ const Pigeon: React.FC = () => {
       Taro.showToast({ title: '发送失败，请重试', icon: 'none' })
     } finally {
       setSending(false)
-      if (stampInputRef.current) stampInputRef.current.value = ''
     }
   }
 
@@ -143,23 +189,41 @@ const Pigeon: React.FC = () => {
         )}
         {letters.map((letter, index) => {
           const track = index % TRACK_COUNT
-          const duration = 10 + (index % 5) * 2
-          const delay = -(index * 2.5) % duration
+          // 弹幕整体减慢：25s ~ 40s 一屏，便于用户点击查看
+          const duration = 25 + (index % 6) * 3
+          const delay = -(index * 4) % duration
+          const isPaused = pausedLetterId === letter.id
           return (
+            // 外层 wrapper 只负责水平飞行动画
             <View
               key={letter.id}
-              className='pg-pigeon'
+              className='pg-pigeon-track'
               style={{
                 top: `${8 + track * 15}%`,
                 animationDuration: `${duration}s`,
                 animationDelay: `${delay}s`,
+                animationPlayState: isPaused ? 'paused' : 'running',
               }}
-              onClick={() => setSelectedLetter(letter)}
             >
-              <View className='pg-pigeon-body' style={{ background: letter.color }}>
-                <Text className='pg-pigeon-icon'>🕊️</Text>
+              {/* 内层信鸽：负责暂停时的缩放 + 点击交互 */}
+              <View
+                className={`pg-pigeon ${isPaused ? 'pg-pigeon-paused' : ''}`}
+                onClick={() => {
+                  if (isPaused) {
+                    // 再次点击同一只信鸽：展开信件并恢复滚动
+                    setSelectedLetter(letter)
+                    setPausedLetterId(null)
+                  } else {
+                    // 第一次点击：暂停该信鸽，便于查看
+                    setPausedLetterId(letter.id)
+                  }
+                }}
+              >
+                <View className='pg-pigeon-body' style={{ background: letter.color }}>
+                  <Text className='pg-pigeon-icon'>🕊️</Text>
+                </View>
+                <Text className='pg-pigeon-label'>{letter.receiver_name}</Text>
               </View>
-              <Text className='pg-pigeon-label'>{letter.receiver_name}</Text>
             </View>
           )
         })}
@@ -241,27 +305,33 @@ const Pigeon: React.FC = () => {
               onChange={(e) => setContent(e.target.value)}
             />
 
-            <Text className='pg-color-title'>选择信鸽颜色</Text>
-            <View className='pg-color-palette'>
-              {COLOR_PALETTE.map((c) => (
+            {processedStamp ? (
+              <View className='pg-stamp-preview'>
                 <View
-                  key={c}
-                  className={`pg-color-dot ${selectedColor === c ? 'selected' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => setSelectedColor(c)}
+                  className='pg-stamp-image'
+                  style={{ backgroundImage: `url(${processedStamp.previewUrl})` }}
                 />
-              ))}
-            </View>
+                <View className='pg-stamp-info'>
+                  <Text className='pg-stamp-label'>信鸽颜色（已自动提取）</Text>
+                  <View
+                    className='pg-stamp-color'
+                    style={{ background: processedStamp.color }}
+                  />
+                </View>
+              </View>
+            ) : (
+              <Text className='pg-stamp-hint'>点击“选择图片并发送”后，图片会被像素化压缩，信鸽颜色将从图片主色自动提取</Text>
+            )}
 
             <View className='pg-panel-actions'>
               <View className='pg-panel-btn' onClick={handleSaveDraft}>
                 <Text>存为草稿</Text>
               </View>
               <View
-                className={`pg-panel-btn primary ${sending ? 'disabled' : ''}`}
-                onClick={handleSendClick}
+                className={`pg-panel-btn primary ${(sending || processing) ? 'disabled' : ''}`}
+                onClick={processedStamp ? handleSendNow : handleSendClick}
               >
-                <Text>📷 拍鸟邮票并发送</Text>
+                <Text>{processedStamp ? '🕊️ 发送信鸽' : '📷 选择图片并发送'}</Text>
               </View>
             </View>
           </View>

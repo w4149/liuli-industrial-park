@@ -1,5 +1,8 @@
 import { supabase } from '@/utils/supabase'
-import { User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter } from '@/types'
+import {
+  User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter,
+  ColorWordLink, BodyRecord, BodyStory, BodyColor,
+} from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
 const getEnv = () => {
@@ -427,9 +430,9 @@ export const api = {
       }
     },
 
-    // 上传音频文件到 Storage，返回公开 URL
+    // 上传音频文件到 Storage（桶 LIULI，目录 audio/），返回公开 URL
     async uploadAudio(file: File, path: string): Promise<string> {
-      return uploadToStorage('audio-markers', path, file)
+      return uploadToStorage('LIULI', `audio/${path}`, file)
     },
 
     // 创建声音标记记录
@@ -497,9 +500,129 @@ export const api = {
       return this.createLetter({ ...letter, is_draft: true })
     },
 
-    // 上传邮票图片，返回公开 URL
+    // 上传图片到 Storage（桶 LIULI，目录 image/），返回公开 URL
     async uploadStamp(file: File, path: string): Promise<string> {
-      return uploadToStorage('pigeon-stamps', path, file)
+      return uploadToStorage('LIULI', `image/${path}`, file)
+    },
+  },
+
+  // ===== 选色游戏：词语 → 颜色(hex) 映射 =====
+  colorWord: {
+    // 获取用户最新的选色结果
+    async getLatest(userId: string): Promise<ColorWordLink | null> {
+      if (!useSupabase) return null
+      try {
+        const { data } = await supabase.from('color_word_links').eq('user_id', userId)
+        console.log('[colorWord.getLatest] userId=', userId, 'data=', data)
+        if (!data || data.length === 0) return null
+        const sorted = [...data].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+        return sorted[0] as ColorWordLink
+      } catch (error) {
+        console.error('Get color word link failed:', error)
+        return null
+      }
+    },
+
+    // 保存新的选色结果
+    async save(link: Omit<ColorWordLink, 'id' | 'created_at'>): Promise<ColorWordLink> {
+      const newLink = { ...link, created_at: new Date().toISOString() }
+      console.log('[colorWord.save] payload=', newLink)
+      if (!useSupabase) {
+        return { ...newLink, id: `link-${Date.now()}` } as ColorWordLink
+      }
+      try {
+        const { data, error } = await supabase.from('color_word_links').insert([newLink]) as any
+        console.log('[colorWord.save] response data=', data, 'error=', error)
+        if (error) {
+          console.error('Save color word link DB error:', error)
+          throw new Error(error.message || 'Insert failed')
+        }
+        if (data && data.length > 0) {
+          return data[0] as ColorWordLink
+        }
+        throw new Error('No data returned from insert')
+      } catch (error: any) {
+        console.error('Save color word link failed:', error)
+        throw error
+      }
+    },
+  },
+
+  // ===== 身体状态记录（涂色快照） =====
+  bodyRecord: {
+    // 获取用户所有历史涂色记录（按时间倒序）
+    async getAll(userId: string): Promise<BodyRecord[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('body_records').eq('user_id', userId)
+        const list = (data || []) as BodyRecord[]
+        return list.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      } catch (error) {
+        console.warn('Get body records failed:', error)
+        return []
+      }
+    },
+
+    // 创建一条新的涂色记录
+    async create(record: Omit<BodyRecord, 'id' | 'created_at'>): Promise<BodyRecord> {
+      const newRecord = { ...record, created_at: new Date().toISOString() }
+      if (!useSupabase) {
+        return { ...newRecord, id: `rec-${Date.now()}` } as BodyRecord
+      }
+      try {
+        const { data } = await supabase.from('body_records').insert([newRecord])
+        if (data && data.length > 0) {
+          return data[0] as BodyRecord
+        }
+      } catch (error) {
+        console.warn('Create body record failed:', error)
+      }
+      return { ...newRecord, id: `rec-${Date.now()}` } as BodyRecord
+    },
+  },
+
+  // ===== 身体小故事 =====
+  bodyStory: {
+    // 获取用户所有故事
+    async getAll(userId: string): Promise<BodyStory[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('body_stories').eq('user_id', userId)
+        const list = (data || []) as BodyStory[]
+        return list.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      } catch (error) {
+        console.warn('Get body stories failed:', error)
+        return []
+      }
+    },
+
+    // 按 [身体部位 + 词] 查询故事（客户端过滤）
+    async getByPartAndWord(userId: string, part: string, word: string): Promise<BodyStory[]> {
+      const all = await this.getAll(userId)
+      return all.filter((s) => s.body_part === part && s.word === word)
+    },
+
+    // 创建一条故事
+    async create(story: Omit<BodyStory, 'id' | 'created_at'>): Promise<BodyStory> {
+      const newStory = { ...story, created_at: new Date().toISOString() }
+      if (!useSupabase) {
+        return { ...newStory, id: `story-${Date.now()}` } as BodyStory
+      }
+      try {
+        const { data } = await supabase.from('body_stories').insert([newStory])
+        if (data && data.length > 0) {
+          return data[0] as BodyStory
+        }
+      } catch (error) {
+        console.warn('Create body story failed:', error)
+      }
+      return { ...newStory, id: `story-${Date.now()}` } as BodyStory
     },
   },
 }

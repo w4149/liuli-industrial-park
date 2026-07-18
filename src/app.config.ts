@@ -7,6 +7,9 @@ export default {
     'pages/shop/index',
     'pages/profile/index',
     'pages/personality/index',
+    'pages/colorLink/index',
+    'pages/bodyRecord/index',
+    'pages/bodyProfile/index',
   ],
   window: {
     navigationBarTitleText: '琉璃文创园区',

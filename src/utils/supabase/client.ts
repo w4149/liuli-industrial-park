@@ -160,7 +160,13 @@ export const supabaseClient = {
 
     insert: async (values: any[]) => {
       const supabaseUrl = getSupabaseUrl()
-      const headers = getHeaders()
+      const supabaseKey = getSupabaseKey()
+      const headers = {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'return=representation',
+      }
       const url = `${supabaseUrl}/rest/v1/${table}?select=*`
       const response = await fetch(url, {
         method: 'POST',
@@ -197,7 +203,13 @@ export const supabaseClient = {
 
     update: async (values: any, column: string, value: string | number) => {
       const supabaseUrl = getSupabaseUrl()
-      const headers = getHeaders()
+      const supabaseKey = getSupabaseKey()
+      const headers = {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'return=representation',
+      }
       const url = `${supabaseUrl}/rest/v1/${table}?${column}=eq.${value}`
       const response = await fetch(url, {
         method: 'PATCH',
