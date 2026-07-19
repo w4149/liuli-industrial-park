@@ -20,24 +20,60 @@ const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
   }
 }
 
-const rgbToHex = (r: number, g: number, b: number): string => {
-  const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0')
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+// 确定性伪随机（保证每次渲染位置一致）
+const seededRng = (seed: number) => {
+  let s = seed
+  return () => {
+    s = (s * 16807 + 12345) % 2147483647
+    return (s & 0x7fffffff) / 0x7fffffff
+  }
 }
 
-const blendColor = (hexCounts: Record<string, number>): string => {
-  const entries = Object.entries(hexCounts)
-  if (entries.length === 0) return '#e8e4dc'
-  const total = entries.reduce((s, [, c]) => s + c, 0)
-  let r = 0, g = 0, b = 0
-  for (const [hex, count] of entries) {
-    const { r: cr, g: cg, b: cb } = hexToRgb(hex)
-    const w = count / total
-    r += cr * w
-    g += cg * w
-    b += cb * w
+// Box-Muller 高斯分布
+const gaussRand = (rng: () => number) => {
+  const u1 = Math.max(0.001, rng())
+  const u2 = rng()
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
+}
+
+// 为某个部位生成散点 SVG
+const scatterDotsForPart = (
+  partKey: string,
+  hexCounts: Record<string, number>,
+  link: ColorWordLink,
+  isSelected: boolean,
+): string => {
+  const zone = BODY_ZONES.find((z) => z.key === partKey)
+  if (!zone) return ''
+  const cx = (zone.xMin + zone.xMax) / 2
+  const cy = (zone.yMin + zone.yMax) / 2
+  const spreadX = (zone.xMax - zone.xMin) * 0.35
+  const spreadY = (zone.yMax - zone.yMin) * 0.35
+
+  let seed = 0
+  for (let i = 0; i < partKey.length; i++) seed += partKey.charCodeAt(i) * (i + 1) * 37
+  const rng = seededRng(seed)
+
+  let html = ''
+  for (const [hex, count] of Object.entries(hexCounts)) {
+    const word = hexToWord(hex, link)
+    const { r, g, b } = hexToRgb(hex)
+    const numDots = Math.max(6, count * 10)
+    for (let i = 0; i < numDots; i++) {
+      const dx = gaussRand(rng) * spreadX
+      const dy = gaussRand(rng) * spreadY
+      const x = cx + dx
+      const y = cy + dy
+      const radius = 3 + rng() * 3
+      html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" fill="rgba(${r},${g},${b},0.8)" data-part="${partKey}" data-word="${word}" />`
+    }
   }
-  return rgbToHex(r, g, b)
+
+  // 选中时加高亮圈
+  if (isSelected) {
+    html += `<circle cx="${cx}" cy="${cy}" r="${Math.max(spreadX, spreadY) * 1.1}" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="4 3" data-part="${partKey}" />`
+  }
+  return html
 }
 
 const hexToWord = (hex: string, link: ColorWordLink): string => {
@@ -95,32 +131,23 @@ const BodyProfile: React.FC = () => {
     return map
   }, [records])
 
-  // 每个部位的混合填充色
-  const partFill = useMemo(() => {
-    const fills: Record<string, string> = {}
-    for (const z of BODY_ZONES) {
-      fills[z.key] = blendColor(partHexCounts[z.key] || {})
-    }
-    return fills
-  }, [partHexCounts])
-
-  // 生成 SVG HTML（用区域矩形 + clipPath 渲染）
+  // 生成 SVG HTML（散点式渲染）
   const svgHtml = useMemo(() => {
     const defaultFill = '#f5f2ec'
-    const zones = BODY_ZONES.map((z) => {
-      const fill = partFill[z.key] !== '#e8e4dc' ? partFill[z.key] : defaultFill
-      const isSelected = selectedPart === z.key
-      const stroke = isSelected ? '#333' : 'none'
-      const strokeW = isSelected ? '2' : '0'
-      return `<rect x="${z.xMin}" y="${z.yMin}" width="${z.xMax - z.xMin}" height="${z.yMax - z.yMin}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}" data-part="${z.key}" />`
-    })
+    let dotsHtml = ''
+    for (const z of BODY_ZONES) {
+      const counts = partHexCounts[z.key]
+      if (counts && Object.keys(counts).length > 0) {
+        dotsHtml += scatterDotsForPart(z.key, counts, link!, selectedPart === z.key)
+      }
+    }
     return `<svg viewBox="0 0 200 420" xmlns="http://www.w3.org/2000/svg">
   <defs><clipPath id="profile-clip"><path d="${BODY_SILHOUETTE}" /></clipPath></defs>
   <path d="${BODY_SILHOUETTE}" fill="${defaultFill}" stroke="#d5d0c8" stroke-width="1" />
-  <g clip-path="url(#profile-clip)">${zones.join('')}</g>
+  <g clip-path="url(#profile-clip)">${dotsHtml}</g>
   <path d="${BODY_SILHOUETTE}" fill="none" stroke="#8a8578" stroke-width="1.5" pointer-events="none" />
 </svg>`
-  }, [partFill, selectedPart])
+  }, [partHexCounts, link, selectedPart])
 
   // SVG 点击事件
   const handleSvgClick = useCallback((e: any) => {

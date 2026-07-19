@@ -37,6 +37,7 @@
 
   .bp-main {
     display: flex;
+    flex-direction: column;
     gap: 16px;
     background: #fff;
     border-radius: 20px;
@@ -45,12 +46,14 @@
   }
 
   .bp-figure {
-    flex: 1;
-    max-width: 320px;
+    display: flex;
+    justify-content: center;
 
     .bp-svg {
-      width: 100%;
+      height: 70vh;
+      width: auto;
       aspect-ratio: 200 / 420;
+      max-width: 90vw;
 
       svg {
         width: 100%;

@@ -34,6 +34,15 @@ const zoneColors: Record<string, string> = {
   '水池': '#4a90d9',
 }
 
+// 颜色变亮
+const lightenColor = (hex: string, amount: number): string => {
+  const h = hex.replace('#', '')
+  const r = Math.min(255, parseInt(h.slice(0, 2), 16) + amount)
+  const g = Math.min(255, parseInt(h.slice(2, 4), 16) + amount)
+  const b = Math.min(255, parseInt(h.slice(4, 6), 16) + amount)
+  return `rgb(${r},${g},${b})`
+}
+
 interface Bubble {
   id: string
   name: string
@@ -190,7 +199,7 @@ const AudioGarden: React.FC = () => {
     setTimeout(() => {
       setPoppedIds(prev => [...prev, bubble.id])
       setBurstIds(prev => prev.filter(id => id !== bubble.id))
-    }, 300)
+    }, 550)
   }
 
   const handlePauseResume = () => {
@@ -414,25 +423,58 @@ const AudioGarden: React.FC = () => {
 
       {/* 气泡区域 */}
       <View className='ag-bubble-area'>
-        {bubbles.map((b) => (
-          <View
-            key={b.id}
-            className={`ag-bubble ${burstIds.includes(b.id) ? 'burst' : ''}`}
-            style={{
-              width: `${b.size}px`,
-              height: `${b.size}px`,
-              left: `${b.left}%`,
-              top: `${b.top}%`,
-              background: b.color,
-              animationDelay: `${b.delay}s`,
-            }}
-            onClick={() => handleBubbleClick(b)}
-          >
-            {b.isUser && <Text className='ag-bubble-user'>🎤</Text>}
-            <Text className='ag-bubble-name'>{b.name}</Text>
-            {b.isUser && <Text className='ag-bubble-nick'>{b.nickname}</Text>}
-          </View>
-        ))}
+        {bubbles.map((b) => {
+          const isBursting = burstIds.includes(b.id)
+          return (
+            <View
+              key={b.id}
+              className={`ag-bubble ${isBursting ? 'burst' : ''}`}
+              style={{
+                width: `${b.size}px`,
+                height: `${b.size}px`,
+                left: `${b.left}%`,
+                top: `${b.top}%`,
+                background: `radial-gradient(circle at 40% 35%, ${lightenColor(b.color, 30)}, ${b.color} 70%)`,
+                animationDelay: `${b.delay}s`,
+              }}
+              onClick={() => handleBubbleClick(b)}
+            >
+              <View className='bubble-inner'>
+                {b.isUser && <Text className='ag-bubble-user'>🎤</Text>}
+                <Text className='ag-bubble-name'>{b.name}</Text>
+                {b.isUser && <Text className='ag-bubble-nick'>{b.nickname}</Text>}
+              </View>
+              <View className='bubble-sheen' />
+              {isBursting && (
+                <>
+                  <View className='burst-ring' />
+                  {Array.from({ length: 10 }).map((_, i) => {
+                    const angle = (i * 36) * Math.PI / 180
+                    const dist = 30 + (i % 3) * 18
+                    const px = Math.cos(angle) * dist
+                    const py = Math.sin(angle) * dist
+                    const sz = 5 + (i % 3) * 3
+                    return (
+                      <View
+                        key={`p${i}`}
+                        className='burst-particle'
+                        style={{
+                          width: `${sz}px`,
+                          height: `${sz}px`,
+                          background: b.color,
+                          opacity: 0.9,
+                          animationDelay: `${i * 0.02}s`,
+                          '--px': `${px}px`,
+                          '--py': `${py}px`,
+                        } as React.CSSProperties}
+                      />
+                    )
+                  })}
+                </>
+              )}
+            </View>
+          )
+        })}
         {bubbles.length === 0 && (
           <View className='ag-empty'>
             <Text>暂无声音气泡</Text>
