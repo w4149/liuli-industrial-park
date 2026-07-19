@@ -130,15 +130,36 @@ const BodyRecord: React.FC = () => {
     return (link as any)[`word_${word}`] || '#ccc'
   }
 
-  // 初始化：获取 stroke group 引用
+  // 初始化：获取 stroke group 引用（多重保障）
   useEffect(() => {
-    const el = canvasRef.current
-    if (!el) return
-    const svgEl = (el as unknown as HTMLElement).querySelector?.('svg')
-      || (el as any)?.firstElementChild
-    if (svgEl) {
-      strokeGroupRef.current = svgEl.querySelector('#stroke-group') || svgEl.childNodes[2] as SVGGElement
-      svgRectRef.current = svgEl.getBoundingClientRect()
+    const initGroup = () => {
+      // 优先用 getElementById（最可靠）
+      const group = document.getElementById('stroke-group') as SVGGElement | null
+      if (group) {
+        strokeGroupRef.current = group
+        return true
+      }
+      // 回退：通过 ref 查找
+      const el = canvasRef.current
+      if (el) {
+        const domEl = (el as unknown as HTMLElement)
+        const svgEl = domEl.querySelector?.('svg') || domEl.firstElementChild
+        if (svgEl) {
+          const g = svgEl.querySelector('#stroke-group') || svgEl.childNodes[2]
+          if (g) {
+            strokeGroupRef.current = g as SVGGElement
+            return true
+          }
+        }
+      }
+      return false
+    }
+
+    // 首次尝试
+    if (!initGroup()) {
+      // 延迟重试（等待 dangerouslySetInnerHTML 渲染完成）
+      const timer = setTimeout(() => initGroup(), 100)
+      return () => clearTimeout(timer)
     }
   }, [])
 
@@ -161,7 +182,10 @@ const BodyRecord: React.FC = () => {
       return
     }
     const rect = getRect()
-    if (!rect) return
+    if (!rect) {
+      console.warn('[bodyRecord] SVG rect not found!')
+      return
+    }
     isDrawing.current = true
 
     const cx = 'touches' in e ? e.touches[0].clientX : e.clientX
@@ -174,6 +198,7 @@ const BodyRecord: React.FC = () => {
 
     // 直接向 SVG DOM 添加圆点
     const group = strokeGroupRef.current
+    console.log('[bodyRecord] onDown: group=', !!group, 'x=', x.toFixed(1), 'y=', y.toFixed(1))
     if (group) addDotToSvg(group, x, y, currentColor.current, 0.9)
   }, [activeWord, link])
 

@@ -312,27 +312,67 @@ const AudioGarden: React.FC = () => {
     }
   }
 
-  // 获取当前定位后进入确认步骤
-  const proceedToConfirm = () => {
-    Taro.showLoading({ title: '获取定位中...' })
-    if (!navigator.geolocation) {
-      Taro.hideLoading()
-      Taro.showToast({ title: '浏览器不支持定位', icon: 'none' })
-      return
+  // IP 定位兜底（不依赖 GPS/HTTPS，通过 IP 地址获取大致位置）
+  const getIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) })
+      if (!res.ok) return null
+      const data = await res.json()
+      if (data.latitude && data.longitude) {
+        return { lat: data.latitude, lng: data.longitude }
+      }
+      return null
+    } catch (e) {
+      console.warn('IP定位失败:', e)
+      return null
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        Taro.hideLoading()
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        setLeaveStep('confirm')
-      },
-      (err) => {
-        Taro.hideLoading()
-        console.warn('定位失败:', err)
-        Taro.showToast({ title: '定位失败，请重试', icon: 'none' })
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    )
+  }
+
+  // 获取定位（带重试 + IP 兜底）
+  const getLocation = (): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        // 浏览器不支持，直接用 IP 定位
+        getIpLocation().then(resolve)
+        return
+      }
+
+      let attempt = 0
+      const tryGet = () => {
+        attempt++
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          async (err) => {
+            console.warn(`定位失败(第${attempt}次):`, err.message, err.code)
+            if (attempt < 2) {
+              // 重试一次
+              setTimeout(tryGet, 1000)
+            } else {
+              // 两次都失败，用 IP 定位兜底
+              const ipLoc = await getIpLocation()
+              resolve(ipLoc)
+            }
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 }
+        )
+      }
+      tryGet()
+    })
+  }
+
+  // 获取当前定位后进入确认步骤
+  const proceedToConfirm = async () => {
+    Taro.showLoading({ title: '获取定位中...' })
+    const loc = await getLocation()
+    Taro.hideLoading()
+    if (loc) {
+      setGps(loc)
+      setLeaveStep('confirm')
+    } else {
+      // 所有定位方式都失败
+      Taro.showToast({ title: '定位失败，请检查网络或权限后重试', icon: 'none', duration: 3000 })
+      setLeaveStep('confirm')
+    }
   }
 
   const handleUpload = async () => {
@@ -341,39 +381,12 @@ const AudioGarden: React.FC = () => {
       Taro.showToast({ title: '请给声音取个名字', icon: 'none' })
       return
     }
+    if (!gps) {
+      Taro.showToast({ title: '定位未获取，请返回重试', icon: 'none' })
+      return
+    }
     setUploading(true)
     try {
-      // 若尚未获取定位，先获取一次（任何位置都可上传，但仍需确认定位）
-      let currentGps = gps
-      if (!currentGps) {
-        Taro.showLoading({ title: '获取定位中...' })
-        currentGps = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
-          if (!navigator.geolocation) {
-            Taro.hideLoading()
-            Taro.showToast({ title: '浏览器不支持定位', icon: 'none' })
-            reject(new Error('no geolocation'))
-            return
-          }
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              Taro.hideLoading()
-              resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-            },
-            (err) => {
-              Taro.hideLoading()
-              console.warn('定位失败:', err)
-              Taro.showToast({ title: '定位失败，请重试', icon: 'none' })
-              reject(err)
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-          )
-        }).catch(() => null)
-        if (!currentGps) {
-          setUploading(false)
-          return
-        }
-      }
-      // 关联点位：若当前处于触发区域则用区域名，否则标记为自由点
       const zoneName = points.length > 0 ? points[0] : ''
       const ext = pendingBlob.type.includes('webm') ? 'webm' : 'audio'
       const fileName = `${Date.now()}-${Math.round(Math.random() * 1000)}.${ext}`
@@ -385,7 +398,7 @@ const AudioGarden: React.FC = () => {
         user_id: user?.id || 'guest',
         user_nickname: user?.nickname || '访客',
         zone_name: zoneName,
-        coordinate: currentGps,
+        coordinate: gps,
         audio_url: audioUrl,
         audio_name: audioName.trim(),
         duration: pendingDuration,
@@ -553,9 +566,24 @@ const AudioGarden: React.FC = () => {
               <View className='ag-panel-body'>
                 <Text className='ag-panel-title'>在此处留下声音？</Text>
                 <Text className='ag-panel-loc'>
-                  当前位置：{gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : '获取中'}
+                  当前位置：{gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : '❌ 未获取'}
                 </Text>
-                <Text className='ag-panel-loc'>关联点位：{points[0]}</Text>
+                <Text className='ag-panel-loc'>关联点位：{points[0] || '自由点'}</Text>
+                {!gps && (
+                  <View className='ag-panel-btn' onClick={async () => {
+                    Taro.showLoading({ title: '重新定位中...' })
+                    const loc = await getLocation()
+                    Taro.hideLoading()
+                    if (loc) {
+                      setGps(loc)
+                      Taro.showToast({ title: '定位成功', icon: 'success' })
+                    } else {
+                      Taro.showToast({ title: '定位仍失败，请检查网络/权限', icon: 'none', duration: 3000 })
+                    }
+                  }}>
+                    <Text>🔄 重试定位</Text>
+                  </View>
+                )}
                 <input
                   className='ag-name-input'
                   placeholder='给这段声音取个名字'
@@ -563,10 +591,10 @@ const AudioGarden: React.FC = () => {
                   onChange={(e) => setAudioName(e.target.value)}
                 />
                 <View
-                  className={`ag-panel-btn primary ${uploading ? 'disabled' : ''}`}
+                  className={`ag-panel-btn primary ${(!gps || uploading) ? 'disabled' : ''}`}
                   onClick={handleUpload}
                 >
-                  <Text>{uploading ? '上传中...' : '确认留下'}</Text>
+                  <Text>{uploading ? '上传中...' : (!gps ? '需先获取定位' : '确认留下')}</Text>
                 </View>
               </View>
             )}
