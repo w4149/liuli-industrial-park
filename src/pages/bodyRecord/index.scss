@@ -54,14 +54,20 @@
     width: auto;
     aspect-ratio: 200 / 420;
     max-width: 90vw;
-    cursor: crosshair;
-    user-select: none;
-    touch-action: none;
 
-    svg {
+    // 内层原生 div 容器
+    .br-svg-canvas-inner {
       width: 100%;
       height: 100%;
-      display: block;
+      cursor: crosshair;
+      user-select: none;
+      touch-action: none;
+
+      svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
     }
   }
 

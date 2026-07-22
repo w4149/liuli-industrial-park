@@ -360,6 +360,16 @@
     margin-bottom: 12px;
   }
 
+  .ag-map-preview {
+    width: 100%;
+    height: 360px;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    background: #f0f0f5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
   .ag-name-input {
     margin: 20px 0 32px;
     padding: 24px;

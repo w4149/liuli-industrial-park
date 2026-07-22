@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow, useDidHide } from '@tarojs/taro'
 import { View, Text } from '@tarojs/components'
 import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
@@ -84,13 +84,46 @@ function strokeToSvgHtml(s: BrushStroke): string {
   return html
 }
 
-// 初始 SVG（只包含轮廓和 clipPath，不变）
-const INITIAL_SVG = `<svg viewBox="0 0 200 420" xmlns="http://www.w3.org/2000/svg">
-  <defs><clipPath id="body-clip"><path d="${BODY_SILHOUETTE}" /></clipPath></defs>
-  <path d="${BODY_SILHOUETTE}" fill="#f5f2ec" stroke="#d5d0c8" stroke-width="1"/>
-  <g id="stroke-group" clip-path="url(#body-clip)"></g>
-  <path d="${BODY_SILHOUETTE}" fill="none" stroke="#8a8578" stroke-width="1.5"/>
-</svg>`
+// ─── 程序化创建 SVG（createElementNS 确保正确命名空间，兼容所有移动端）──
+function createBodySvg(): { svg: SVGSVGElement; group: SVGGElement } {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 200 420')
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+
+  // defs + clipPath
+  const defs = document.createElementNS(SVG_NS, 'defs')
+  const clipPath = document.createElementNS(SVG_NS, 'clipPath')
+  clipPath.setAttribute('id', 'body-clip')
+  const clipP = document.createElementNS(SVG_NS, 'path')
+  clipP.setAttribute('d', BODY_SILHOUETTE)
+  clipPath.appendChild(clipP)
+  defs.appendChild(clipPath)
+  svg.appendChild(defs)
+
+  // 底色轮廓
+  const bg = document.createElementNS(SVG_NS, 'path')
+  bg.setAttribute('d', BODY_SILHOUETTE)
+  bg.setAttribute('fill', '#f5f2ec')
+  bg.setAttribute('stroke', '#d5d0c8')
+  bg.setAttribute('stroke-width', '1')
+  svg.appendChild(bg)
+
+  // 笔触组（带 clipPath）
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('id', 'stroke-group')
+  g.setAttribute('clip-path', 'url(#body-clip)')
+  svg.appendChild(g)
+
+  // 轮廓线（在最上层）
+  const outline = document.createElementNS(SVG_NS, 'path')
+  outline.setAttribute('d', BODY_SILHOUETTE)
+  outline.setAttribute('fill', 'none')
+  outline.setAttribute('stroke', '#8a8578')
+  outline.setAttribute('stroke-width', '1.5')
+  svg.appendChild(outline)
+
+  return { svg, group: g }
+}
 
 // ─── 组件 ────────────────────────────────────────
 const BodyRecord: React.FC = () => {
@@ -104,13 +137,22 @@ const BodyRecord: React.FC = () => {
   const [submitting, setSubmitting] = useState(false)
   const [shuffledWords] = useState(() => shuffle(BODY_WORDS))
 
-  const canvasRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null) // Taro View 包裹层
+  const svgContainerRef = useRef<HTMLDivElement | null>(null) // 原生 SVG 容器（挂在 document.body 上）
   const strokeGroupRef = useRef<SVGGElement | null>(null)
+  const svgElRef = useRef<SVGSVGElement | null>(null)
   const svgRectRef = useRef<DOMRect | null>(null)
   const isDrawing = useRef(false)
   const currentPoints = useRef<{ x: number; y: number }[]>([])
   const currentColor = useRef('')
   const currentWord = useRef('')
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  // 用 ref 追踪 state，避免 effect 重建
+  const activeWordRef = useRef<string | null>(null)
+  const linkRef = useRef<ColorWordLink | null>(null)
+  useEffect(() => { activeWordRef.current = activeWord }, [activeWord])
+  useEffect(() => { linkRef.current = link }, [link])
 
   // 加载选色结果
   useEffect(() => {
@@ -126,165 +168,204 @@ const BodyRecord: React.FC = () => {
   }, [user])
 
   const getWordHex = (word: string): string => {
-    if (!link) return '#ccc'
-    return (link as any)[`word_${word}`] || '#ccc'
+    const l = linkRef.current
+    if (!l) return '#ccc'
+    return (l as any)[`word_${word}`] || '#ccc'
   }
 
-  // 初始化：获取 stroke group 引用（多重保障）
+  // ── 创建原生 div 容器 + SVG + 绑定事件（link 加载后执行一次）──
   useEffect(() => {
-    const initGroup = () => {
-      // 优先用 getElementById（最可靠）
-      const group = document.getElementById('stroke-group') as SVGGElement | null
-      if (group) {
-        strokeGroupRef.current = group
-        return true
-      }
-      // 回退：通过 ref 查找
-      const el = canvasRef.current
-      if (el) {
-        const domEl = (el as unknown as HTMLElement)
-        const svgEl = domEl.querySelector?.('svg') || domEl.firstElementChild
-        if (svgEl) {
-          const g = svgEl.querySelector('#stroke-group') || svgEl.childNodes[2]
-          if (g) {
-            strokeGroupRef.current = g as SVGGElement
-            return true
-          }
+    // 如果 SVG 已创建过，跳过（防止 link 变化导致重复创建）
+    if (svgElRef.current) return
+
+    // 延迟重试获取 host 元素（移动端渲染较慢）
+    const tryCreateSvg = (retries = 0) => {
+      const hostEl = document.getElementById('br-svg-host')
+      if (!hostEl) {
+        if (retries < 10) {
+          setTimeout(() => tryCreateSvg(retries + 1), 100)
+        } else {
+          console.warn('[bodyRecord] #br-svg-host not found after 10 retries')
         }
+        return
       }
-      return false
+
+      // 创建原生 div 容器 — append 到 document.body，完全脱离 Taro 渲染树
+      const container = document.createElement('div')
+      container.className = 'br-svg-canvas-inner'
+      container.style.position = 'fixed'
+      container.style.zIndex = '50'
+      container.style.touchAction = 'none'
+      container.style.userSelect = 'none'
+      container.style.cursor = 'crosshair'
+
+      // 根据 host 元素的位置计算 container 的 fixed 定位
+      const updatePosition = () => {
+        const rect = hostEl.getBoundingClientRect()
+        container.style.top = rect.top + 'px'
+        container.style.left = rect.left + 'px'
+        container.style.width = rect.width + 'px'
+        container.style.height = rect.height + 'px'
+        // 布局变了就清掉缓存的 svg rect
+        svgRectRef.current = null
+      }
+      updatePosition()
+
+      // 用 createElementNS 创建 SVG（确保正确命名空间，兼容移动端）
+      const { svg, group } = createBodySvg()
+      container.appendChild(svg)
+      document.body.appendChild(container)
+
+      svgElRef.current = svg
+      strokeGroupRef.current = group
+      svgContainerRef.current = container
+
+      console.log('[bodyRecord] SVG mounted on document.body, fixed position set')
+
+      // 延迟一帧确保布局完成
+      requestAnimationFrame(() => {
+        svgRectRef.current = svg.getBoundingClientRect()
+        console.log('[bodyRecord] SVG ready, rect:', svgRectRef.current.width, 'x', svgRectRef.current.height)
+      })
+
+      const getRect = (): DOMRect | null => {
+        if (!svgRectRef.current || svgRectRef.current.width === 0) {
+          svgRectRef.current = svg.getBoundingClientRect()
+        }
+        return svgRectRef.current
+      }
+
+      // ── 事件处理（通过 ref 读取最新 state）──
+      const onDown = (e: MouseEvent | TouchEvent) => {
+        e.preventDefault()
+        const word = activeWordRef.current
+        if (!word) {
+          Taro.showToast({ title: '请先选择一个感受词', icon: 'none' })
+          return
+        }
+        const rect = getRect()
+        if (!rect) return
+        isDrawing.current = true
+
+        const cx = 'touches' in e ? e.touches[0].clientX : e.clientX
+        const cy = 'touches' in e ? e.touches[0].clientY : e.clientY
+        const { x, y } = toSvg(cx, cy, rect)
+
+        currentPoints.current = [{ x, y }]
+        currentColor.current = getWordHex(word)
+        currentWord.current = word
+
+        const group = strokeGroupRef.current
+        console.log('[bodyRecord] onDown: group=', !!group, 'x=', x.toFixed(1), 'y=', y.toFixed(1))
+        if (group) addDotToSvg(group, x, y, currentColor.current, 0.9)
+      }
+
+      const onMove = (e: MouseEvent | TouchEvent) => {
+        e.preventDefault()
+        if (!isDrawing.current) return
+        const rect = getRect()
+        if (!rect) return
+
+        const cx = 'touches' in e ? e.touches[0].clientX : e.clientX
+        const cy = 'touches' in e ? e.touches[0].clientY : e.clientY
+        const { x, y } = toSvg(cx, cy, rect)
+
+        const last = currentPoints.current[currentPoints.current.length - 1]
+        if (last && Math.sqrt((x - last.x) ** 2 + (y - last.y) ** 2) < 1.5) return
+
+        currentPoints.current.push({ x, y })
+        const group = strokeGroupRef.current
+        if (group) addDotToSvg(group, x, y, currentColor.current, 0.7 + Math.random() * 0.6)
+      }
+
+      const onUp = () => {
+        if (!isDrawing.current) return
+        isDrawing.current = false
+
+        const pts = currentPoints.current
+        if (pts.length === 0) return
+
+        const indices = [0, Math.floor(pts.length / 2), pts.length - 1]
+        const zoneCounts: Record<string, number> = {}
+        for (const i of indices) {
+          const z = detectBodyPart(pts[i].x, pts[i].y)
+          if (z) zoneCounts[z] = (zoneCounts[z] || 0) + 1
+        }
+        let partKey: string | null = null
+        let maxC = 0
+        for (const [z, c] of Object.entries(zoneCounts)) {
+          if (c > maxC) { maxC = c; partKey = z }
+        }
+
+        console.log('[bodyRecord] stroke pts=', pts.length, 'part=', partKey)
+
+        const stroke: BrushStroke = {
+          id: `s-${Date.now()}`,
+          points: [...pts],
+          color: currentColor.current,
+          word: currentWord.current,
+          partKey,
+        }
+        setStrokes((prev) => [...prev, stroke])
+        currentPoints.current = []
+      }
+
+      // 绑定原生事件
+      container.addEventListener('mousedown', onDown)
+      container.addEventListener('mousemove', onMove)
+      container.addEventListener('mouseup', onUp)
+      container.addEventListener('mouseleave', onUp)
+      container.addEventListener('touchstart', onDown, { passive: false })
+      container.addEventListener('touchmove', onMove, { passive: false })
+      container.addEventListener('touchend', onUp)
+
+      // resize / scroll 监听 — 同步更新 fixed 容器位置
+      const onLayoutChange = () => {
+        updatePosition()
+      }
+      window.addEventListener('resize', onLayoutChange)
+      window.addEventListener('scroll', onLayoutChange, true) // capture 阶段，捕获所有滚动
+
+      // 保存 cleanup 引用
+      cleanupRef.current = () => {
+        container.removeEventListener('mousedown', onDown)
+        container.removeEventListener('mousemove', onMove)
+        container.removeEventListener('mouseup', onUp)
+        container.removeEventListener('mouseleave', onUp)
+        container.removeEventListener('touchstart', onDown)
+        container.removeEventListener('touchmove', onMove)
+        container.removeEventListener('touchend', onUp)
+        window.removeEventListener('resize', onLayoutChange)
+        window.removeEventListener('scroll', onLayoutChange, true)
+        if (container.parentNode) container.parentNode.removeChild(container)
+        svgContainerRef.current = null
+      }
     }
 
-    // 首次尝试
-    if (!initGroup()) {
-      // 延迟重试（等待 dangerouslySetInnerHTML 渲染完成）
-      const timer = setTimeout(() => initGroup(), 100)
-      return () => clearTimeout(timer)
-    }
-  }, [])
+    tryCreateSvg()
 
-  // 获取 SVG rect（确保缓存有效）
-  const getRect = (): DOMRect | null => {
-    if (!svgRectRef.current || svgRectRef.current.width === 0) {
-      const el = canvasRef.current
-      if (!el) return null
-      const svgEl = (el as unknown as HTMLElement).querySelector?.('svg')
-      if (svgEl) svgRectRef.current = svgEl.getBoundingClientRect()
-    }
-    return svgRectRef.current
-  }
-
-  // ── 绘画事件处理（直接 DOM 操作）──
-  const onDown = useCallback((e: MouseEvent | TouchEvent) => {
-    e.preventDefault()
-    if (!activeWord) {
-      Taro.showToast({ title: '请先选择一个感受词', icon: 'none' })
-      return
-    }
-    const rect = getRect()
-    if (!rect) {
-      console.warn('[bodyRecord] SVG rect not found!')
-      return
-    }
-    isDrawing.current = true
-
-    const cx = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const cy = 'touches' in e ? e.touches[0].clientY : e.clientY
-    const { x, y } = toSvg(cx, cy, rect)
-
-    currentPoints.current = [{ x, y }]
-    currentColor.current = getWordHex(activeWord)
-    currentWord.current = activeWord
-
-    // 直接向 SVG DOM 添加圆点
-    const group = strokeGroupRef.current
-    console.log('[bodyRecord] onDown: group=', !!group, 'x=', x.toFixed(1), 'y=', y.toFixed(1))
-    if (group) addDotToSvg(group, x, y, currentColor.current, 0.9)
-  }, [activeWord, link])
-
-  const onMove = useCallback((e: MouseEvent | TouchEvent) => {
-    e.preventDefault()
-    if (!isDrawing.current) return
-    const rect = svgRectRef.current
-    if (!rect) return
-
-    const cx = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const cy = 'touches' in e ? e.touches[0].clientY : e.clientY
-    const { x, y } = toSvg(cx, cy, rect)
-
-    // 最小距离过滤
-    const last = currentPoints.current[currentPoints.current.length - 1]
-    if (last && Math.sqrt((x - last.x) ** 2 + (y - last.y) ** 2) < 1.5) return
-
-    currentPoints.current.push({ x, y })
-
-    // 直接 DOM 操作添加圆点
-    const group = strokeGroupRef.current
-    if (group) addDotToSvg(group, x, y, currentColor.current, 0.7 + Math.random() * 0.6)
-  }, [])
-
-  const onUp = useCallback(() => {
-    if (!isDrawing.current) return
-    isDrawing.current = false
-
-    const pts = currentPoints.current
-    if (pts.length === 0) return
-
-    // 多点采样检测部位
-    const indices = [0, Math.floor(pts.length / 2), pts.length - 1]
-    const zoneCounts: Record<string, number> = {}
-    for (const i of indices) {
-      const z = detectBodyPart(pts[i].x, pts[i].y)
-      if (z) zoneCounts[z] = (zoneCounts[z] || 0) + 1
-    }
-    let partKey: string | null = null
-    let maxC = 0
-    for (const [z, c] of Object.entries(zoneCounts)) {
-      if (c > maxC) { maxC = c; partKey = z }
-    }
-
-    console.log('[bodyRecord] stroke pts=', pts.length, 'part=', partKey)
-
-    const stroke: BrushStroke = {
-      id: `s-${Date.now()}`,
-      points: [...pts],
-      color: currentColor.current,
-      word: currentWord.current,
-      partKey,
-    }
-    setStrokes((prev) => [...prev, stroke])
-    currentPoints.current = []
-  }, [])
-
-  // 绑定原生事件
-  useEffect(() => {
-    const el = canvasRef.current
-    if (!el) return
-    const n = el as unknown as HTMLElement
-    n.addEventListener('mousedown', onDown)
-    n.addEventListener('mousemove', onMove)
-    n.addEventListener('mouseup', onUp)
-    n.addEventListener('mouseleave', onUp)
-    n.addEventListener('touchstart', onDown, { passive: false })
-    n.addEventListener('touchmove', onMove, { passive: false })
-    n.addEventListener('touchend', onUp)
     return () => {
-      n.removeEventListener('mousedown', onDown)
-      n.removeEventListener('mousemove', onMove)
-      n.removeEventListener('mouseup', onUp)
-      n.removeEventListener('mouseleave', onUp)
-      n.removeEventListener('touchstart', onDown)
-      n.removeEventListener('touchmove', onMove)
-      n.removeEventListener('touchend', onUp)
+      if (cleanupRef.current) cleanupRef.current()
     }
-  }, [onDown, onMove, onUp])
+  }, [link]) // ← link 加载后 host 元素才存在于 DOM；svgElRef 守卫防止重复创建
 
-  // 窗口 resize 时更新 rect
+  // 弹窗打开时隐藏 SVG 容器，避免遮挡输入框
   useEffect(() => {
-    const onResize = () => { svgRectRef.current = null; getRect() }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+    const el = svgContainerRef.current
+    if (!el) return
+    el.style.display = showStory ? 'none' : ''
+  }, [showStory])
+
+  // 页面导航：离开时隐藏 SVG 容器，返回时恢复（Taro H5 页面栈机制）
+  useDidHide(() => {
+    if (svgContainerRef.current) svgContainerRef.current.style.display = 'none'
+  })
+  useDidShow(() => {
+    // 返回时恢复，但如果故事弹窗正打开则继续隐藏
+    if (svgContainerRef.current) {
+      svgContainerRef.current.style.display = showStory ? 'none' : ''
+    }
+  })
 
   const handleUndo = () => {
     setStrokes((prev) => {
@@ -396,11 +477,7 @@ const BodyRecord: React.FC = () => {
 
       {/* 画布 */}
       <View className='br-canvas'>
-        <View
-          className='br-svg-canvas'
-          ref={canvasRef}
-          dangerouslySetInnerHTML={{ __html: INITIAL_SVG }}
-        />
+        <View className='br-svg-canvas' id='br-svg-host' ref={hostRef} />
       </View>
 
       {/* 已检测部位 */}

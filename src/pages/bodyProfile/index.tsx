@@ -47,8 +47,8 @@ const scatterDotsForPart = (
   if (!zone) return ''
   const cx = (zone.xMin + zone.xMax) / 2
   const cy = (zone.yMin + zone.yMax) / 2
-  const spreadX = (zone.xMax - zone.xMin) * 0.35
-  const spreadY = (zone.yMax - zone.yMin) * 0.35
+  const spreadX = (zone.xMax - zone.xMin) * 0.1
+  const spreadY = (zone.yMax - zone.yMin) * 0.1
 
   let seed = 0
   for (let i = 0; i < partKey.length; i++) seed += partKey.charCodeAt(i) * (i + 1) * 37
@@ -64,8 +64,8 @@ const scatterDotsForPart = (
       const dy = gaussRand(rng) * spreadY
       const x = cx + dx
       const y = cy + dy
-      const radius = 3 + rng() * 3
-      html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" fill="rgba(${r},${g},${b},0.8)" data-part="${partKey}" data-word="${word}" />`
+      const radius = 1.5 + rng() * 1.5
+      html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(1)}" fill="rgba(${r},${g},${b},0.3)" data-part="${partKey}" data-word="${word}" />`
     }
   }
 
@@ -157,18 +157,46 @@ const BodyProfile: React.FC = () => {
     setSelectedPart((prev) => (prev === partKey ? null : partKey))
   }, [])
 
-  // 原生 DOM 事件绑定
+  // 原生 DOM 事件绑定（同时支持 click + touchend，兼容移动端）
   const svgContainerRef = useCallback((node: any) => {
     if (!node) return
     const el = node as unknown as HTMLElement
-    const handler = (e: MouseEvent) => {
-      const target = e.target as SVGElement
-      const partKey = target.getAttribute?.('data-part')
+    const getPartFromEvent = (e: MouseEvent | TouchEvent): string | null => {
+      // 从 touch 或 mouse 坐标获取目标元素
+      let targetEl: Element | null
+      if ('touches' in e) {
+        const touch = e.changedTouches[0]
+        targetEl = document.elementFromPoint(touch.clientX, touch.clientY)
+      } else {
+        targetEl = e.target as Element
+      }
+      if (!targetEl) return null
+      // 向上查找带 data-part 的祖先元素
+      let cur: Element | null = targetEl
+      while (cur && cur !== el) {
+        const pk = cur.getAttribute('data-part')
+        if (pk) return pk
+        cur = cur.parentElement
+      }
+      return null
+    }
+    const onClick = (e: MouseEvent) => {
+      const partKey = getPartFromEvent(e)
       if (!partKey) return
       setSelectedPart((prev) => (prev === partKey ? null : partKey))
     }
-    el.addEventListener('click', handler)
-    return () => el.removeEventListener('click', handler)
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault()
+      const partKey = getPartFromEvent(e)
+      if (!partKey) return
+      setSelectedPart((prev) => (prev === partKey ? null : partKey))
+    }
+    el.addEventListener('click', onClick)
+    el.addEventListener('touchend', onTouchEnd, { passive: false })
+    return () => {
+      el.removeEventListener('click', onClick)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
   }, [])
 
   const selectedPartWordDist = useMemo(() => {

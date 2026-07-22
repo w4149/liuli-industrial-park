@@ -119,6 +119,29 @@ const AudioGarden: React.FC = () => {
     }
   }, [])
 
+  // 地图预览：当 gps 变化时，在预览容器中创建 OpenStreetMap iframe
+  useEffect(() => {
+    if (!gps) return
+    const container = document.getElementById('ag-map-preview')
+    if (!container) return
+
+    // 清除旧内容
+    container.innerHTML = ''
+
+    const delta = 0.003 // ~300m 范围
+    const bbox = `${gps.lng - delta},${gps.lat - delta},${gps.lng + delta},${gps.lat + delta}`
+    const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${gps.lat},${gps.lng}`
+
+    const iframe = document.createElement('iframe')
+    iframe.src = src
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+    iframe.style.border = 'none'
+    iframe.style.borderRadius = '12px'
+    iframe.loading = 'lazy'
+    container.appendChild(iframe)
+  }, [gps])
+
   // 构建气泡列表（官方音频 + 用户录音）
   const buildBubbles = (): Bubble[] => {
     const list: Bubble[] = []
@@ -246,7 +269,28 @@ const AudioGarden: React.FC = () => {
     setShowLeavePanel(false)
   }
 
+  // 录音兼容性预检
+  const checkRecordingSupport = (): { supported: boolean; message?: string } => {
+    if (!window.isSecureContext) {
+      return { supported: false, message: '需要 HTTPS 安全连接才能录音，请通过 HTTPS 访问本页' }
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return { supported: false, message: '当前浏览器不支持录音功能' }
+    }
+    if (typeof window.MediaRecorder === 'undefined') {
+      return { supported: false, message: '当前浏览器不支持 MediaRecorder，请尝试使用 Chrome 或 Safari 14.3+' }
+    }
+    return { supported: true }
+  }
+
   const startRecording = async () => {
+    // 兼容性预检
+    const check = checkRecordingSupport()
+    if (!check.supported) {
+      Taro.showToast({ title: check.message || '不支持录音', icon: 'none', duration: 3000 })
+      return
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
@@ -272,9 +316,18 @@ const AudioGarden: React.FC = () => {
           return prev + 1
         })
       }, 1000)
-    } catch (err) {
+    } catch (err: any) {
       console.warn('录音失败:', err)
-      Taro.showToast({ title: '无法获取录音权限', icon: 'none' })
+      const name = err?.name || ''
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        Taro.showToast({ title: '录音权限被拒绝，请在浏览器设置中允许麦克风访问', icon: 'none', duration: 3000 })
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        Taro.showToast({ title: '未找到麦克风设备', icon: 'none', duration: 3000 })
+      } else if (name === 'NotReadableError') {
+        Taro.showToast({ title: '麦克风被其他应用占用，请关闭后重试', icon: 'none', duration: 3000 })
+      } else {
+        Taro.showToast({ title: `录音失败：${err?.message || '未知错误'}`, icon: 'none', duration: 3000 })
+      }
     }
   }
 
@@ -387,7 +440,6 @@ const AudioGarden: React.FC = () => {
     }
     setUploading(true)
     try {
-      const zoneName = points.length > 0 ? points[0] : ''
       const ext = pendingBlob.type.includes('webm') ? 'webm' : 'audio'
       const fileName = `${Date.now()}-${Math.round(Math.random() * 1000)}.${ext}`
       const file = pendingBlob instanceof File
@@ -397,7 +449,7 @@ const AudioGarden: React.FC = () => {
       await api.audio.createMarker({
         user_id: user?.id || 'guest',
         user_nickname: user?.nickname || '访客',
-        zone_name: zoneName,
+        zone_name: '',
         coordinate: gps,
         audio_url: audioUrl,
         audio_name: audioName.trim(),
@@ -565,10 +617,12 @@ const AudioGarden: React.FC = () => {
             {leaveStep === 'confirm' && (
               <View className='ag-panel-body'>
                 <Text className='ag-panel-title'>在此处留下声音？</Text>
+                {gps && (
+                  <View className='ag-map-preview' id='ag-map-preview' />
+                )}
                 <Text className='ag-panel-loc'>
                   当前位置：{gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : '❌ 未获取'}
                 </Text>
-                <Text className='ag-panel-loc'>关联点位：{points[0] || '自由点'}</Text>
                 {!gps && (
                   <View className='ag-panel-btn' onClick={async () => {
                     Taro.showLoading({ title: '重新定位中...' })
