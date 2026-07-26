@@ -157,42 +157,54 @@ const BodyProfile: React.FC = () => {
     setSelectedPart((prev) => (prev === partKey ? null : partKey))
   }, [])
 
-  // 原生 DOM 事件绑定（同时支持 click + touchend，兼容移动端）
+  // 记录最近一次触摸时间，防止移动端 touchend 后合成 click 重复触发（导致选中又立即取消）
+  const lastTouchTimeRef = React.useRef(0)
+  // ref 追踪最新的 partHexCounts，供事件闭包读取
+  const partHexCountsRef = React.useRef(partHexCounts)
+  useEffect(() => { partHexCountsRef.current = partHexCounts }, [partHexCounts])
+
+  // 原生 DOM 事件绑定：按坐标命中 BODY_ZONES 区域（不依赖精确点中散点，移动端更易点击）
   const svgContainerRef = useCallback((node: any) => {
     if (!node) return
     const el = node as unknown as HTMLElement
-    const getPartFromEvent = (e: MouseEvent | TouchEvent): string | null => {
-      // 从 touch 或 mouse 坐标获取目标元素
-      let targetEl: Element | null
-      if ('touches' in e) {
-        const touch = e.changedTouches[0]
-        targetEl = document.elementFromPoint(touch.clientX, touch.clientY)
-      } else {
-        targetEl = e.target as Element
-      }
-      if (!targetEl) return null
-      // 向上查找带 data-part 的祖先元素
-      let cur: Element | null = targetEl
-      while (cur && cur !== el) {
-        const pk = cur.getAttribute('data-part')
-        if (pk) return pk
-        cur = cur.parentElement
-      }
-      return null
+
+    // 屏幕坐标 → viewBox(200x420) 坐标 → 命中部位区域
+    const getPartFromPoint = (clientX: number, clientY: number): string | null => {
+      const svg = el.querySelector('svg')
+      const rect = (svg || el).getBoundingClientRect()
+      if (!rect.width || !rect.height) return null
+      // preserveAspectRatio 默认 xMidYMid meet：按短边缩放并居中
+      const s = Math.min(rect.width / 200, rect.height / 420)
+      const x = (clientX - rect.left - (rect.width - 200 * s) / 2) / s
+      const y = (clientY - rect.top - (rect.height - 420 * s) / 2) / s
+      const zone = BODY_ZONES.find(
+        (z) => x >= z.xMin && x <= z.xMax && y >= z.yMin && y <= z.yMax,
+      )
+      if (!zone) return null
+      // 只允许选择有涂色数据的部位
+      const counts = partHexCountsRef.current[zone.key]
+      return counts && Object.keys(counts).length > 0 ? zone.key : null
     }
-    const onClick = (e: MouseEvent) => {
-      const partKey = getPartFromEvent(e)
+
+    const toggle = (clientX: number, clientY: number) => {
+      const partKey = getPartFromPoint(clientX, clientY)
       if (!partKey) return
       setSelectedPart((prev) => (prev === partKey ? null : partKey))
+    }
+
+    const onClick = (e: MouseEvent) => {
+      // 触摸后 600ms 内的合成 click 忽略，避免二次切换
+      if (Date.now() - lastTouchTimeRef.current < 600) return
+      toggle(e.clientX, e.clientY)
     }
     const onTouchEnd = (e: TouchEvent) => {
-      e.preventDefault()
-      const partKey = getPartFromEvent(e)
-      if (!partKey) return
-      setSelectedPart((prev) => (prev === partKey ? null : partKey))
+      lastTouchTimeRef.current = Date.now()
+      const t = e.changedTouches[0]
+      if (t) toggle(t.clientX, t.clientY)
     }
+
     el.addEventListener('click', onClick)
-    el.addEventListener('touchend', onTouchEnd, { passive: false })
+    el.addEventListener('touchend', onTouchEnd)
     return () => {
       el.removeEventListener('click', onClick)
       el.removeEventListener('touchend', onTouchEnd)

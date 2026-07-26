@@ -382,10 +382,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     return R * c
   }
 
+  // 触发圈半径固定为 20 米（此前随 GPS 精度动态缩放，会导致圈忽大忽小）
   const getTriggerRadius = () => {
-    if (currentAccuracy !== null) {
-      return Math.max(15, Math.floor(currentAccuracy * 1.5))
-    }
     return 20
   }
 
