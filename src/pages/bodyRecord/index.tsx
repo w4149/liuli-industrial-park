@@ -175,20 +175,32 @@ const BodyRecord: React.FC = () => {
 
   // ── 创建原生 div 容器 + SVG + 绑定事件（link 加载后执行一次）──
   useEffect(() => {
+    // host 元素只在 link 加载后才渲染，link 为空时不启动重试链
+    if (!link) return
     // 如果 SVG 已创建过，跳过（防止 link 变化导致重复创建）
     if (svgElRef.current) return
 
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
     // 延迟重试获取 host 元素（移动端渲染较慢）
     const tryCreateSvg = (retries = 0) => {
+      // 已取消或已创建（防止多条重试链并发导致重复创建容器）
+      if (cancelled || svgElRef.current) return
       const hostEl = document.getElementById('br-svg-host')
       if (!hostEl) {
         if (retries < 10) {
-          setTimeout(() => tryCreateSvg(retries + 1), 100)
+          retryTimer = setTimeout(() => tryCreateSvg(retries + 1), 100)
         } else {
           console.warn('[bodyRecord] #br-svg-host not found after 10 retries')
         }
         return
       }
+
+      // 防御：移除历史遗留的孤儿容器（重试链竞争可能产生的重复容器）
+      document.querySelectorAll('.br-svg-canvas-inner').forEach((n) => {
+        if (n.parentNode) n.parentNode.removeChild(n)
+      })
 
       // 创建原生 div 容器 — append 到 document.body，完全脱离 Taro 渲染树
       const container = document.createElement('div')
@@ -345,26 +357,30 @@ const BodyRecord: React.FC = () => {
     tryCreateSvg()
 
     return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
       if (cleanupRef.current) cleanupRef.current()
     }
   }, [link]) // ← link 加载后 host 元素才存在于 DOM；svgElRef 守卫防止重复创建
 
-  // 弹窗打开时隐藏 SVG 容器，避免遮挡输入框
+  // 弹窗打开时隐藏 SVG 容器，避免遮挡输入框（兜底：隐藏页面上所有涂色容器）
   useEffect(() => {
-    const el = svgContainerRef.current
-    if (!el) return
-    el.style.display = showStory ? 'none' : ''
+    document.querySelectorAll<HTMLElement>('.br-svg-canvas-inner').forEach((n) => {
+      n.style.display = showStory ? 'none' : ''
+    })
   }, [showStory])
 
   // 页面导航：离开时隐藏 SVG 容器，返回时恢复（Taro H5 页面栈机制）
   useDidHide(() => {
-    if (svgContainerRef.current) svgContainerRef.current.style.display = 'none'
+    document.querySelectorAll<HTMLElement>('.br-svg-canvas-inner').forEach((n) => {
+      n.style.display = 'none'
+    })
   })
   useDidShow(() => {
     // 返回时恢复，但如果故事弹窗正打开则继续隐藏
-    if (svgContainerRef.current) {
-      svgContainerRef.current.style.display = showStory ? 'none' : ''
-    }
+    document.querySelectorAll<HTMLElement>('.br-svg-canvas-inner').forEach((n) => {
+      n.style.display = showStory ? 'none' : ''
+    })
   })
 
   const handleUndo = () => {
