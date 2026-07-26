@@ -1,19 +1,20 @@
 .personality-page {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: hsl(var(--muted) / 0.4);
   max-width: 414PX;
   margin: 0 auto;
 }
 
 .header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: hsl(var(--card));
+  border-bottom: 1PX solid hsl(var(--border));
   padding: 40px 20px 20px;
 }
 
 .title {
   font-size: 24px;
-  font-weight: 600;
-  color: white;
+  font-weight: 700;
+  color: hsl(var(--foreground));
 }
 
 .test-container {
@@ -25,8 +26,10 @@
 }
 
 .result-card {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   padding: 30px 20px;
   text-align: center;
 }
@@ -35,7 +38,7 @@
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: hsl(var(--primary) / 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -44,20 +47,20 @@
 
 .beast-icon-large span {
   font-size: 64px;
-  color: white;
+  color: hsl(var(--primary));
 }
 
 .result-title {
   font-size: 16px;
-  color: #666;
+  color: hsl(var(--muted-foreground));
   display: block;
   margin-bottom: 8px;
 }
 
 .beast-type {
   font-size: 32px;
-  font-weight: 600;
-  color: #333;
+  font-weight: 700;
+  color: hsl(var(--foreground));
   display: block;
   margin-bottom: 20px;
 }
@@ -71,16 +74,17 @@
 }
 
 .trait-tag {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
   padding: 8px 20px;
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   font-size: 14px;
+  font-weight: 500;
 }
 
 .result-desc {
   font-size: 15px;
-  color: #666;
+  color: hsl(var(--muted-foreground));
   line-height: 1.6;
   display: block;
   margin-bottom: 24px;
@@ -88,10 +92,10 @@
 
 .share-btn {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 14px;
   font-size: 16px;
   font-weight: 500;
@@ -100,10 +104,10 @@
 
 .retry-btn {
   width: 100%;
-  background: #f0f0f0;
-  color: #666;
-  border: none;
-  border-radius: 8px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1PX solid hsl(var(--input));
+  border-radius: var(--radius);
   padding: 14px;
   font-size: 16px;
   font-weight: 500;

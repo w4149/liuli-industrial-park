@@ -10,7 +10,7 @@
 
     .cl-back {
       font-size: 40px;
-      color: #3a3a5a;
+      color: hsl(var(--foreground));
       cursor: pointer;
       margin-right: 12px;
       padding: 4px 8px;
@@ -19,14 +19,14 @@
     .cl-title {
       font-size: 36px;
       font-weight: 700;
-      color: #3a3a5a;
+      color: hsl(var(--foreground));
     }
   }
 
   .cl-subtitle {
     display: block;
     font-size: 24px;
-    color: #888;
+    color: hsl(var(--muted-foreground));
     text-align: center;
     margin-bottom: 20px;
   }
@@ -108,7 +108,7 @@
     text-align: center;
     margin-top: 12px;
     font-size: 22px;
-    color: #666;
+    color: hsl(var(--muted-foreground));
   }
 
   .cl-active-hint {
@@ -116,17 +116,18 @@
     text-align: center;
     margin-top: 8px;
     font-size: 24px;
-    color: #4a90d9;
+    color: hsl(var(--primary));
     font-weight: 600;
     animation: cl-blink 1.2s ease-in-out infinite;
   }
 
   // 词语列表
   .cl-words {
-    background: #fff;
-    border-radius: 20px;
+    background: hsl(var(--card));
+    border: 1PX solid hsl(var(--border));
+    border-radius: var(--radius-lg);
     padding: 16px 20px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -138,16 +139,16 @@
     gap: 12px;
     height: 64px;
     padding: 0 16px;
-    border-radius: 16px;
+    border-radius: var(--radius);
     cursor: pointer;
     transition: all 0.2s ease;
-    background: #f8f8fc;
+    background: hsl(var(--muted) / 0.6);
     border: 2px solid transparent;
 
     &.active {
-      border-color: #4a90d9;
-      background: #eef3ff;
-      box-shadow: 0 2px 8px rgba(74, 144, 217, 0.2);
+      border-color: hsl(var(--primary));
+      background: hsl(var(--primary) / 0.08);
+      box-shadow: 0 2px 8px hsl(var(--primary) / 0.2);
     }
 
     &.assigned {
@@ -157,7 +158,7 @@
     .cl-word-text {
       flex: 1;
       font-size: 28px;
-      color: #3a3a5a;
+      color: hsl(var(--foreground));
       font-weight: 500;
     }
 
@@ -165,7 +166,7 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      border: 2px solid #ddd;
+      border: 2px solid hsl(var(--border));
       flex-shrink: 0;
     }
 
@@ -186,19 +187,19 @@
     flex: 1;
     height: 80px;
     border-radius: 40px;
-    background: #f0f0f5;
+    background: hsl(var(--secondary));
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 26px;
-    color: #3a3a5a;
+    color: hsl(var(--foreground));
     cursor: pointer;
 
     &.primary {
-      background: linear-gradient(135deg, #4a90d9, #667eea);
-      color: #fff;
+      background: hsl(var(--primary));
+      color: hsl(var(--primary-foreground));
       font-weight: 600;
-      box-shadow: 0 6px 18px rgba(74, 144, 217, 0.4);
+      box-shadow: 0 6px 18px hsl(var(--primary) / 0.35);
     }
 
     &.disabled {

@@ -12,8 +12,10 @@
 }
 
 .modal-content {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   width: 90%;
   max-width: 360px;
   padding: 20px;
@@ -30,7 +32,7 @@
 .modal-title {
   font-size: 18px;
   font-weight: 600;
-  color: #333;
+  color: hsl(var(--foreground));
   margin: 0;
 }
 
@@ -38,7 +40,7 @@
   background: none;
   border: none;
   font-size: 24px;
-  color: #999;
+  color: hsl(var(--muted-foreground));
   cursor: pointer;
   padding: 0;
 }
@@ -49,7 +51,7 @@
 
 .quiz-question p {
   font-size: 16px;
-  color: #333;
+  color: hsl(var(--foreground));
   line-height: 1.6;
   margin: 0;
 }
@@ -63,18 +65,19 @@
 
 .option-item {
   padding: 14px 16px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1PX solid hsl(var(--input));
+  border-radius: var(--radius);
   font-size: 14px;
-  color: #333;
-  background: white;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
   text-align: left;
   transition: all 0.2s;
 }
 
 .option-item.selected {
-  border-color: #667eea;
-  background: #f0f0ff;
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+  box-shadow: 0 0 0 1PX hsl(var(--primary));
 }
 
 .option-item.correct {
@@ -83,8 +86,8 @@
 }
 
 .option-item.wrong {
-  border-color: #ff6b6b;
-  background: #fff0f0;
+  border-color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.08);
 }
 
 .option-item:active:not(:disabled) {
@@ -97,10 +100,10 @@
 
 .submit-btn {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 14px;
   font-size: 16px;
   font-weight: 500;
@@ -118,7 +121,7 @@
 .result-message {
   text-align: center;
   padding: 20px;
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .result-message.success {
@@ -126,7 +129,7 @@
 }
 
 .result-message.error {
-  background: #fff0f0;
+  background: hsl(var(--destructive) / 0.08);
 }
 
 .emoji {
@@ -145,5 +148,5 @@
 }
 
 .result-message.error p {
-  color: #ff6b6b;
+  color: hsl(var(--destructive));
 }

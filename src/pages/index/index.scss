@@ -1,13 +1,14 @@
 .index-page {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: hsl(var(--muted) / 0.4);
   padding-bottom: 80rpx;
   max-width: 414PX;
   margin: 0 auto;
 }
 
 .header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: hsl(var(--card));
+  border-bottom: 1PX solid hsl(var(--border));
   padding: 40px 20px 20px;
   display: flex;
   justify-content: space-between;
@@ -16,13 +17,13 @@
 
 .title {
   font-size: 24px;
-  font-weight: 600;
-  color: white;
+  font-weight: 700;
+  color: hsl(var(--foreground));
 }
 
 .inspiration-badge {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
+  background: hsl(var(--primary) / 0.12);
+  border-radius: var(--radius-full);
   padding: 8px 16px;
   display: flex;
   align-items: center;
@@ -36,7 +37,7 @@
 .badge-value {
   font-size: 16px;
   font-weight: 600;
-  color: white;
+  color: hsl(var(--primary));
 }
 
 .map-section {
@@ -48,7 +49,7 @@
   width: 100%;
   height: auto;
   max-height: 350px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .map-toggle {
@@ -58,19 +59,20 @@
 }
 
 .toggle-btn {
-  background: white;
-  border: 2px solid #667eea;
-  border-radius: 20px;
+  background: hsl(var(--background));
+  border: 1PX solid hsl(var(--input));
+  border-radius: var(--radius-full);
   padding: 10px 24px;
   font-size: 14px;
-  color: #667eea;
+  color: hsl(var(--primary));
   font-weight: 500;
   transition: all 0.3s ease;
 }
 
 .toggle-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
 .content-section {
@@ -78,8 +80,10 @@
 }
 
 .welcome-card {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   padding: 24px;
   text-align: center;
 }
@@ -87,14 +91,14 @@
 .welcome-title {
   font-size: 20px;
   font-weight: 600;
-  color: #333;
+  color: hsl(var(--foreground));
   display: block;
   margin-bottom: 8px;
 }
 
 .welcome-text {
   font-size: 14px;
-  color: #666;
+  color: hsl(var(--muted-foreground));
   display: block;
   margin-bottom: 20px;
 }
@@ -111,13 +115,13 @@
 .stat-value {
   font-size: 24px;
   font-weight: 600;
-  color: #667eea;
+  color: hsl(var(--primary));
   display: block;
 }
 
 .stat-label {
   font-size: 12px;
-  color: #999;
+  color: hsl(var(--muted-foreground));
   display: block;
 }
 
@@ -126,8 +130,8 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: white;
-  border-top: 1px solid #e0e0e0;
+  background: hsl(var(--card));
+  border-top: 1PX solid hsl(var(--border));
   display: flex;
   padding: 12px 0;
   z-index: 100;
@@ -162,16 +166,18 @@
 
 .tab-label {
   font-size: 12px;
-  color: #999;
+  color: hsl(var(--muted-foreground));
 }
 
 .tab-item.active .tab-label {
-  color: #667eea;
+  color: hsl(var(--primary));
 }
 
 .poi-card {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   padding: 24px;
   margin-bottom: 16px;
 }
@@ -179,19 +185,19 @@
 .poi-name {
   font-size: 20px;
   font-weight: 600;
-  color: #333;
+  color: hsl(var(--foreground));
   margin: 0 0 12px 0;
 }
 
 .poi-description {
   font-size: 14px;
-  color: #666;
+  color: hsl(var(--muted-foreground));
   margin: 0 0 16px 0;
 }
 
 .poi-type {
   font-size: 12px;
-  color: #999;
+  color: hsl(var(--muted-foreground));
   margin-bottom: 16px;
 }
 
@@ -202,25 +208,27 @@
 
 .poi-btn {
   flex: 1;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px;
   font-size: 14px;
   font-weight: 500;
 }
 
 .inspiration-board {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   padding: 20px;
 }
 
 .board-title {
   font-size: 18px;
   font-weight: 600;
-  color: #333;
+  color: hsl(var(--foreground));
   margin: 0 0 16px 0;
 }
 
@@ -231,14 +239,15 @@
 }
 
 .message-card {
-  background: #f8f9fa;
-  border-radius: 12px;
+  background: hsl(var(--muted) / 0.6);
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius);
   padding: 16px;
 }
 
 .message-content {
   font-size: 14px;
-  color: #333;
+  color: hsl(var(--foreground));
   line-height: 1.5;
   margin-bottom: 12px;
 }
@@ -250,29 +259,31 @@
 
 .action-btn {
   background: transparent;
-  border: 1px solid #ddd;
-  border-radius: 20px;
+  border: 1PX solid hsl(var(--input));
+  border-radius: var(--radius-full);
   padding: 6px 12px;
   font-size: 12px;
-  color: #666;
+  color: hsl(var(--muted-foreground));
 }
 
 .quiz-modal {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   padding: 24px;
 }
 
 .quiz-title {
   font-size: 18px;
   font-weight: 600;
-  color: #333;
+  color: hsl(var(--foreground));
   margin: 0 0 16px 0;
 }
 
 .quiz-question {
   font-size: 16px;
-  color: #333;
+  color: hsl(var(--foreground));
   margin: 0 0 20px 0;
   line-height: 1.5;
 }
@@ -285,26 +296,26 @@
 }
 
 .option-btn {
-  background: #f8f9fa;
-  border: 2px solid transparent;
-  border-radius: 10px;
+  background: hsl(var(--muted) / 0.6);
+  border: 1PX solid hsl(var(--input));
+  border-radius: var(--radius);
   padding: 14px;
   font-size: 16px;
-  color: #333;
+  color: hsl(var(--foreground));
   text-align: left;
 }
 
 .option-btn.selected {
-  border-color: #667eea;
-  background: #f0f0ff;
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
 }
 
 .submit-btn {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 14px;
   font-size: 16px;
   font-weight: 500;
@@ -313,7 +324,7 @@
 .quiz-result {
   margin-top: 16px;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   text-align: center;
   font-size: 16px;
   font-weight: 500;
@@ -334,10 +345,10 @@
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: #f5f5f5;
+  background: hsl(var(--muted) / 0.4);
 }
 
 .loading-text {
   font-size: 18px;
-  color: #667eea;
+  color: hsl(var(--primary));
 }

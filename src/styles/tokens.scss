@@ -1,0 +1,75 @@
+// ============================================================
+// Clean Pro UI 设计令牌
+// 源自 .trae/skills/clean-pro-ui 设计规范，适配 Taro H5
+// 用法示例：
+//   color: hsl(var(--foreground));
+//   border: 1PX solid hsl(var(--border));
+//   border-radius: var(--radius);
+// 注意：本项目 pxtransform designWidth=750，普通 px 值按 2 倍设计稿书写；
+//       不需要缩放的（细边框/容器上限）用大写 PX。
+// ============================================================
+
+:root {
+  // 中性色板（HSL 三元组，与 clean-pro-ui 一致）
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+
+  // 品牌主色：由项目原紫渐变 #667eea 收敛而来
+  --primary: 229 76% 66%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 229 76% 66%;
+
+  // 圆角（8PX 实际显示，对应 SKILL 的 0.5rem）
+  --radius: 8PX;
+  --radius-lg: 12PX;
+  --radius-full: 999PX;
+
+  // 阴影（clean-pro 风格：浅、细）
+  --shadow-sm: 0 1PX 2PX rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4PX 6PX -1PX rgba(0, 0, 0, 0.07), 0 2PX 4PX -2PX rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10PX 15PX -3PX rgba(0, 0, 0, 0.08), 0 4PX 6PX -4PX rgba(0, 0, 0, 0.05);
+}
+
+// 暗色模式变量（预留结构，本期不启用切换）
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 229 76% 70%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 229 76% 70%;
+}

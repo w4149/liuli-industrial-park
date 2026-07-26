@@ -1,10 +1,14 @@
+@import './styles/tokens.scss';
+
 page {
-  background-color: #f5f5f5;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  background-color: hsl(var(--background));
+  // Inter 西文优先（本地/系统回退，不引外链字体），中文回退 PingFang/雅黑
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: hsl(var(--foreground));
 }
 
 body {
-  background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%);
+  background: hsl(var(--muted));
   min-height: 100vh;
   margin: 0;
   padding: 0;
@@ -14,8 +18,8 @@ body {
   max-width: 414PX;
   margin: 0 auto;
   min-height: 100vh;
-  background: #f5f5f5;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  background: hsl(var(--background));
+  box-shadow: var(--shadow-lg);
 }
 
 .container {
@@ -24,19 +28,22 @@ body {
   box-sizing: border-box;
 }
 
+// 旧全局卡片类 → clean-pro 视觉（细边框 + 浅阴影）
 .card {
-  background: white;
-  border-radius: 16px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
+// 旧全局主按钮类 → 单色 primary
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px 24px;
   font-size: 16px;
   font-weight: 500;
@@ -44,4 +51,199 @@ body {
 
 .btn-primary:active {
   opacity: 0.8;
+}
+
+// ============================================================
+// Clean Pro UI 全局组件类（.cp-*）
+// ============================================================
+
+// 卡片
+.cp-card {
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+.cp-card-title {
+  display: block;
+  font-size: 32px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin-bottom: 8px;
+}
+
+.cp-card-desc {
+  display: block;
+  font-size: 24px;
+  color: hsl(var(--muted-foreground));
+}
+
+// 顶部导航（白底 + 下边框）
+.cp-nav {
+  background: hsl(var(--card));
+  border-bottom: 1PX solid hsl(var(--border));
+  padding: 24px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cp-nav-title {
+  font-size: 36px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+// 徽章标签
+.cp-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 20px;
+  border-radius: var(--radius-full);
+  font-size: 22px;
+  font-weight: 500;
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+
+  &.primary {
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--primary));
+  }
+
+  &.outline {
+    background: transparent;
+    border: 1PX solid hsl(var(--border));
+    color: hsl(var(--foreground));
+  }
+}
+
+// 按钮（default / secondary / ghost / outline / destructive）
+.cp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 32px;
+  border-radius: var(--radius);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+  border: 1PX solid transparent;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  box-sizing: border-box;
+
+  &:active {
+    opacity: 0.85;
+  }
+
+  &.secondary {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+
+  &.ghost {
+    background: transparent;
+    color: hsl(var(--foreground));
+
+    &:active {
+      background: hsl(var(--accent));
+    }
+  }
+
+  &.outline {
+    background: hsl(var(--background));
+    border-color: hsl(var(--input));
+    color: hsl(var(--foreground));
+
+    &:active {
+      background: hsl(var(--accent));
+    }
+  }
+
+  &.destructive {
+    background: hsl(var(--destructive));
+    color: hsl(var(--destructive-foreground));
+  }
+
+  &.icon {
+    padding: 16px;
+  }
+
+  &.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+// 输入框 / 文本域
+.cp-input,
+.cp-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: hsl(var(--background));
+  border: 1PX solid hsl(var(--input));
+  border-radius: var(--radius);
+  padding: 16px 24px;
+  font-size: 28px;
+  color: hsl(var(--foreground));
+  outline: none;
+
+  &::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  &:focus {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2PX hsl(var(--ring) / 0.25);
+  }
+}
+
+.cp-textarea {
+  min-height: 200px;
+  resize: none;
+}
+
+// 弹窗
+.cp-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 32px;
+}
+
+.cp-modal {
+  width: 100%;
+  max-width: 560px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow: var(--shadow-lg);
+  box-sizing: border-box;
+}
+
+.cp-modal-title {
+  display: block;
+  font-size: 32px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin-bottom: 16px;
+}
+
+// 分隔线
+.cp-divider {
+  height: 1PX;
+  background: hsl(var(--border));
+  margin: 16px 0;
 }
