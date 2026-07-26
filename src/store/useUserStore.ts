@@ -8,6 +8,8 @@ interface UserStore {
   isLoading: boolean
   error: string | null
   triggeredAudioPoints: string[]
+  // 地图滤波后的当前位置（GCJ02 坐标系，与触发判定同源）
+  currentPosition: { lng: number; lat: number } | null
   setUser: (user: User | null) => void
   updateInspirationValue: (value: number) => void
   addBadge: (badge: Badge) => void
@@ -17,6 +19,7 @@ interface UserStore {
   setError: (error: string | null) => void
   clearError: () => void
   setTriggeredAudioPoints: (points: string[]) => void
+  setCurrentPosition: (pos: { lng: number; lat: number } | null) => void
 }
 
 export const useUserStore = create<UserStore>((set) => ({
@@ -26,6 +29,7 @@ export const useUserStore = create<UserStore>((set) => ({
   isLoading: false,
   error: null,
   triggeredAudioPoints: [],
+  currentPosition: null,
   setUser: (user) => set({ user }),
   updateInspirationValue: (value) =>
     set((state) => ({
@@ -49,4 +53,5 @@ export const useUserStore = create<UserStore>((set) => ({
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
   setTriggeredAudioPoints: (points) => set({ triggeredAudioPoints: points }),
+  setCurrentPosition: (pos) => set({ currentPosition: pos }),
 }))

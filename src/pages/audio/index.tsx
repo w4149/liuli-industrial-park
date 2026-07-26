@@ -4,6 +4,7 @@ import { View, Text } from '@tarojs/components'
 import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
 import { AudioMarker } from '@/types'
+import { haversineDistance, wgs84ToGcj02 } from '@/utils'
 import marketAudioSrc from '@/assets/audio/danni-song.m4a'
 import chimneyAudioSrc from '@/assets/audio/longze-chimney.mp3'
 import pondAudioSrc from '@/assets/audio/xingyu-pond.m4a'
@@ -58,8 +59,11 @@ interface Bubble {
 
 const MAX_DURATION = 60
 
+// 音频触发距离（米），与地图触发圈半径保持一致
+const TRIGGER_DISTANCE = 20
+
 const AudioGarden: React.FC = () => {
-  const { triggeredAudioPoints, user } = useUserStore()
+  const { triggeredAudioPoints, user, currentPosition } = useUserStore()
   const [markers, setMarkers] = useState<AudioMarker[]>([])
   const [burstIds, setBurstIds] = useState<string[]>([])
   const [poppedIds, setPoppedIds] = useState<string[]>([])
@@ -87,19 +91,44 @@ const AudioGarden: React.FC = () => {
 
   const points = triggeredAudioPoints || []
 
-  // 加载各触发点位的用户声音标记
-  const loadMarkers = useCallback(async () => {
-    if (points.length === 0) {
-      setMarkers([])
-      return
+  // 直接进入花园页时地图可能尚未提供定位，主动获取一次用于触发判定（转 GCJ02 与地图同源）
+  const [fallbackPos, setFallbackPos] = useState<{ lng: number; lat: number } | null>(null)
+  useEffect(() => {
+    if (currentPosition) return
+    let cancelled = false
+    getLocation().then((loc) => {
+      if (loc && !cancelled) {
+        setFallbackPos(wgs84ToGcj02(loc.lng, loc.lat))
+      }
+    })
+    return () => {
+      cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 当前用于触发判定的位置（优先地图实时位置）
+  const triggerPos = currentPosition || fallbackPos
+
+  // 音频与上传坐标绑定：仅当前位置进入触发距离内的用户音频才可见可播放
+  const visibleMarkers = triggerPos
+    ? markers.filter((m) => {
+        if (!m.coordinate || typeof m.coordinate.lng !== 'number' || typeof m.coordinate.lat !== 'number') return false
+        // 标记存的是原始 WGS84 坐标，转 GCJ02 后与当前位置比距离
+        const gcj = wgs84ToGcj02(m.coordinate.lng, m.coordinate.lat)
+        return haversineDistance(triggerPos.lat, triggerPos.lng, gcj.lat, gcj.lng) <= TRIGGER_DISTANCE
+      })
+    : []
+
+  // 加载全部用户声音标记（自由上传的标记 zone_name 为空，不能按触发点查询）
+  const loadMarkers = useCallback(async () => {
     try {
-      const results = await Promise.all(points.map(p => api.audio.getMarkersForZone(p)))
-      setMarkers(results.flat())
+      const results = await api.audio.getAllMarkers()
+      setMarkers(results)
     } catch (e) {
       console.warn('加载声音标记失败:', e)
     }
-  }, [points.join(',')])
+  }, [])
 
   useEffect(() => {
     loadMarkers()
@@ -162,30 +191,28 @@ const AudioGarden: React.FC = () => {
           delay: Math.random() * 2,
         })
       }
-      // 用户录音气泡
-      markers
-        .filter(m => m.zone_name === pointName)
-        .forEach((m) => {
-          list.push({
-            id: m.id,
-            name: m.audio_name,
-            url: m.audio_url,
-            color,
-            isUser: true,
-            nickname: m.user_nickname,
-            size: 60 + Math.round(Math.random() * 40),
-            left: 8 + Math.random() * 70,
-            top: 8 + Math.random() * 55,
-            delay: Math.random() * 2,
-          })
-        })
+    })
+    // 用户录音气泡：仅展示当前位置可触发（距离内）的音频
+    visibleMarkers.forEach((m) => {
+      list.push({
+        id: m.id,
+        name: m.audio_name,
+        url: m.audio_url,
+        color: zoneColors[m.zone_name] || '#667eea',
+        isUser: true,
+        nickname: m.user_nickname,
+        size: 60 + Math.round(Math.random() * 40),
+        left: 8 + Math.random() * 70,
+        top: 8 + Math.random() * 55,
+        delay: Math.random() * 2,
+      })
     })
     return list.filter(b => !poppedIds.includes(b.id))
   }
 
   const bubblesRef = useRef<Bubble[]>([])
   // 仅在依赖变化时重建气泡布局，避免每次渲染随机跳动
-  const bubblesKey = `${points.join(',')}|${markers.map(m => m.id).join(',')}|${poppedIds.join(',')}`
+  const bubblesKey = `${points.join(',')}|${visibleMarkers.map(m => m.id).join(',')}|${poppedIds.join(',')}`
   const lastKeyRef = useRef('')
   if (lastKeyRef.current !== bubblesKey) {
     bubblesRef.current = buildBubbles()
@@ -458,6 +485,8 @@ const AudioGarden: React.FC = () => {
       Taro.showToast({ title: '声音已留下', icon: 'success' })
       setShowLeavePanel(false)
       await loadMarkers()
+      // 通知地图刷新声音定位标记
+      Taro.eventCenter.trigger('audioMarkersUpdated')
     } catch (err) {
       console.warn('上传失败:', err)
       Taro.showToast({ title: '上传失败，请重试', icon: 'none' })
@@ -482,7 +511,11 @@ const AudioGarden: React.FC = () => {
       </View>
       <View className='ag-subtitle'>
         <Text>
-          {points.length > 0 ? `附近声音：${points.join('、')}` : '当前位置暂无可触发的声音'}
+          {points.length > 0
+            ? `附近声音：${points.join('、')}`
+            : visibleMarkers.length > 0
+              ? '附近有旅人留下的声音'
+              : '当前位置暂无可触发的声音'}
         </Text>
       </View>
 

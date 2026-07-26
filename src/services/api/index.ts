@@ -418,6 +418,18 @@ export const api = {
   },
 
   audio: {
+    // 获取全部用户声音标记（自由上传的标记 zone_name 为空，需全量查询）
+    async getAllMarkers(): Promise<AudioMarker[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('audio_markers').select()
+        return (data || []) as AudioMarker[]
+      } catch (error) {
+        console.warn('Get all audio markers failed:', error)
+        return []
+      }
+    },
+
     // 获取某区域（校准点名称）的所有用户声音标记
     async getMarkersForZone(zoneName: string): Promise<AudioMarker[]> {
       if (!useSupabase) return []

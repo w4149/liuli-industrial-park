@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react'
+import Taro from '@tarojs/taro'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { POI } from '@/types'
 import { supabaseClient } from '@/utils/supabase/client'
@@ -22,6 +23,7 @@ interface MapCanvasProps {
 const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsChange, customMapUrl, customMapBounds }) => {
   // 使用 selector 只订阅稳定的 setter，避免 triggeredAudioPoints 变化导致本组件重渲染
   const setTriggeredAudioPoints = useUserStore((s) => s.setTriggeredAudioPoints)
+  const setCurrentPosition = useUserStore((s) => s.setCurrentPosition)
   // 用 ref 持有回调，保证初始化 effect 无需依赖它们（避免地图被反复销毁重建）
   const onPOIClickRef = useRef(onPOIClick)
   onPOIClickRef.current = onPOIClick
@@ -87,6 +89,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
   const prevUpdateTimeRef = useRef<number>(0)
   const triggerCircleRefs = useRef<Map<string, any>>(new Map())
   const triggerMarkerRefs = useRef<Map<string, any>>(new Map())
+  const audioMarkerRefs = useRef<Map<string, any>>(new Map())
+  const [audioMarkers, setAudioMarkers] = useState<{ id: string; name: string; lng: number; lat: number }[]>([])
   const lastTriggeredZoneRef = useRef<string | null>(null)
   const calibrationPointsRef = useRef<{ id: string; name: string; lng: number; lat: number; timestamp: number }[]>([])
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -97,6 +101,13 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
 
   useEffect(() => {
     loadCalibrationPoints()
+    loadAudioMarkers()
+    // 声音花园上传成功后刷新地图上的声音标记
+    const refreshAudioMarkers = () => loadAudioMarkers()
+    Taro.eventCenter.on('audioMarkersUpdated', refreshAudioMarkers)
+    return () => {
+      Taro.eventCenter.off('audioMarkersUpdated', refreshAudioMarkers)
+    }
   }, [])
 
   useEffect(() => {
@@ -197,6 +208,29 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
           setDebugInfo(prev => ({ ...prev, loadStatus: 'catch error' }))
         }
       }
+    }
+  }
+
+  // 加载用户上传的声音标记（audio_markers 表，坐标为原始 WGS84）
+  const loadAudioMarkers = async () => {
+    try {
+      const env = (window as any).__ENV__ || {}
+      const supabaseUrl = env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+      if (!supabaseUrl) return
+      const { data } = await supabaseClient.from('audio_markers').select('*')
+      if (data) {
+        const markers = data
+          .filter((m: any) => m.coordinate && typeof m.coordinate.lng === 'number' && typeof m.coordinate.lat === 'number')
+          .map((m: any) => ({
+            id: m.id,
+            name: m.audio_name || '声音',
+            lng: m.coordinate.lng,
+            lat: m.coordinate.lat,
+          }))
+        setAudioMarkers(markers)
+      }
+    } catch (e) {
+      console.warn('加载声音标记失败:', e)
     }
   }
 
@@ -519,6 +553,40 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     }
   }, [mapLoaded, calibrationPoints])
 
+  // 绘制用户上传的声音定位小标记
+  const drawAudioMarkers = () => {
+    const map = mapRef.current
+    const AMap = aMapRef.current
+    if (!map || !AMap) return
+
+    audioMarkerRefs.current.forEach((marker) => {
+      map.remove(marker)
+    })
+    audioMarkerRefs.current.clear()
+
+    audioMarkers.forEach((m) => {
+      // 上传时存的是浏览器原始 WGS84 坐标，绘制前需转换为高德 GCJ02
+      const gcj02 = wgs84ToGcj02(m.lng, m.lat)
+      const marker = new AMap.Marker({
+        position: [gcj02.lng, gcj02.lat],
+        title: m.name,
+        zIndex: 52,
+      })
+      marker.setContent(`<div style="width:20px;height:20px;border-radius:50%;background:#667eea;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.25);">🎵</div>`)
+      marker.on('click', () => {
+        Taro.navigateTo({ url: '/pages/audio/index' })
+      })
+      map.add(marker)
+      audioMarkerRefs.current.set(m.id, marker)
+    })
+  }
+
+  useEffect(() => {
+    if (mapLoaded) {
+      drawAudioMarkers()
+    }
+  }, [mapLoaded, audioMarkers])
+
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !aMapRef.current) return
 
@@ -667,6 +735,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     }
 
     lastPositionRef.current = { lng: targetLng, lat: targetLat }
+    // 同步当前位置到 Store（GCJ02），供声音花园按距离过滤音频气泡
+    setCurrentPosition({ lng: targetLng, lat: targetLat })
 
     const triggerRadius = getTriggerRadius()
     const points = calibrationPointsRef.current
