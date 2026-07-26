@@ -164,9 +164,13 @@ const BodyProfile: React.FC = () => {
   useEffect(() => { partHexCountsRef.current = partHexCounts }, [partHexCounts])
 
   // 原生 DOM 事件绑定：按坐标命中 BODY_ZONES 区域（不依赖精确点中散点，移动端更易点击）
+  // 注意：Taro View 的 ref 回调会在每次重渲染时被重新调用，且 React 18 忽略 ref 回调的
+  // 返回值（cleanup 不执行），必须用标记防止重复绑定监听器（否则 toggle 会被执行多次）
   const svgContainerRef = useCallback((node: any) => {
     if (!node) return
     const el = node as unknown as HTMLElement
+    if ((el as any).__bpTapBound) return
+    ;(el as any).__bpTapBound = true
 
     // 屏幕坐标 → viewBox(200x420) 坐标 → 命中部位区域
     const getPartFromPoint = (clientX: number, clientY: number): string | null => {
