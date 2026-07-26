@@ -3,16 +3,26 @@
   background: hsl(var(--muted) / 0.4);
   max-width: 414PX;
   margin: 0 auto;
+  padding-bottom: 40px;
 }
 
 .header {
   background: hsl(var(--card));
   border-bottom: 1PX solid hsl(var(--border));
   padding: 40px 20px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-back-btn {
+  font-size: 22px;
+  color: hsl(var(--foreground));
+  line-height: 1;
 }
 
 .title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   color: hsl(var(--foreground));
 }
@@ -25,69 +35,275 @@
   padding: 20px;
 }
 
-.result-card {
-  background: hsl(var(--card));
-  border: 1PX solid hsl(var(--border));
+/* 釉色主卡 */
+.glaze-card {
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 30px 20px;
+  box-shadow: var(--shadow-md);
+  padding: 28px 20px;
   text-align: center;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
 }
 
-.beast-icon-large {
-  width: 120px;
-  height: 120px;
+.glaze-name {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 12px;
+  opacity: 0.85;
+  border: 1PX solid currentColor;
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+}
+
+.beast-figure {
+  width: 128px;
+  height: 128px;
+  margin: 6px auto 12px;
   border-radius: 50%;
-  background: hsl(var(--primary) / 0.12);
+  background: rgba(255, 255, 255, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 20px;
+  overflow: hidden;
 }
 
-.beast-icon-large span {
+.beast-image {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+}
+
+.beast-emoji {
   font-size: 64px;
-  color: hsl(var(--primary));
+  line-height: 1;
 }
 
-.result-title {
-  font-size: 16px;
-  color: hsl(var(--muted-foreground));
+.beast-name {
   display: block;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 4px;
+}
+
+.beast-alias {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  opacity: 0.92;
+  margin-top: 2px;
+}
+
+.beast-position {
+  display: block;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 6px;
+}
+
+.traits-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.glaze-trait {
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius-full);
+  padding: 5px 14px;
+  font-size: 13px;
+}
+
+.blurry-tip {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+/* 骑凤仙人彩蛋 */
+.immortal-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: linear-gradient(135deg, #fdf6e3 0%, #f6e7c1 100%);
+  border: 1PX solid #e0c88a;
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.immortal-emoji {
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+.immortal-info {
+  flex: 1;
+}
+
+.immortal-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #8a6d1f;
+  margin-bottom: 4px;
+}
+
+.immortal-desc {
+  display: block;
+  font-size: 12px;
+  color: #9c8437;
+  line-height: 1.6;
+}
+
+/* 详情卡 */
+.detail-card {
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.detail-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
   margin-bottom: 8px;
 }
 
-.beast-type {
-  font-size: 32px;
-  font-weight: 700;
-  color: hsl(var(--foreground));
+.detail-text {
   display: block;
-  margin-bottom: 20px;
-}
-
-.traits-list {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.trait-tag {
-  background: hsl(var(--primary) / 0.12);
-  color: hsl(var(--primary));
-  padding: 8px 20px;
-  border-radius: var(--radius-full);
   font-size: 14px;
-  font-weight: 500;
+  color: hsl(var(--foreground));
+  line-height: 1.8;
 }
 
-.result-desc {
-  font-size: 15px;
+.shadow-text {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
   color: hsl(var(--muted-foreground));
   line-height: 1.6;
+  border-top: 1PX dashed hsl(var(--border));
+  padding-top: 10px;
+}
+
+/* 四维画像 */
+.dim-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.dim-side {
+  width: 56px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+
+  &.left {
+    text-align: right;
+  }
+
+  &.right {
+    text-align: left;
+  }
+}
+
+.dim-track {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: hsl(var(--muted));
+  position: relative;
+  overflow: hidden;
+}
+
+.dim-center-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1PX;
+  background: hsl(var(--border));
+}
+
+.dim-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-full);
+}
+
+/* 副脊兽 / 相生搭档 */
+.relation-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.relation-card {
+  flex: 1;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  text-align: center;
+}
+
+.relation-label {
   display: block;
-  margin-bottom: 24px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 6px;
+}
+
+.relation-emoji {
+  display: block;
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+
+.relation-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+/* 窑语金句 */
+.kiln-word-card {
+  border: 1.5PX solid;
+  border-radius: var(--radius-lg);
+  background: hsl(var(--card));
+  padding: 18px 16px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.kiln-word {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.kiln-word-source {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 .share-btn {

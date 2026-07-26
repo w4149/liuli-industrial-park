@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { View, Text, Image } from '@tarojs/components'
 import BadgeDisplay from '@/components/BadgeDisplay'
-import RidgeBeastTest from '@/components/RidgeBeastTest'
 import DeveloperMode from '@/components/DeveloperMode'
 import { Badge, RidgeBeastPersonality, SpatialProfile } from '@/types'
+import { BEAST_PROFILES } from '@/data/ridgeBeasts'
 import { formatTime } from '@/utils'
 import { useUserStore } from '@/store/useUserStore'
 import { api } from '@/services/api'
@@ -29,19 +29,27 @@ const mockSpatialProfile: SpatialProfile = {
   inspiration_adoptions: 3,
 }
 
-const mockPersonality: RidgeBeastPersonality = {
-  type: '龙',
-  traits: ['威严', '智慧', '领导力'],
-  description: '你如同传说中的龙，拥有强大的领导力和智慧，是团队中的核心人物。',
-  customized_image: '',
-}
-
 const Profile: React.FC = () => {
   const { user, badges, setBadges } = useUserStore()
   const [spatialProfile, setSpatialProfile] = useState<SpatialProfile>(mockSpatialProfile)
-  const [personality, setPersonality] = useState<RidgeBeastPersonality | null>(mockPersonality)
-  const [showTest, setShowTest] = useState(false)
+  const [personality, setPersonality] = useState<RidgeBeastPersonality | null>(null)
   const [showDeveloperMode, setShowDeveloperMode] = useState(false)
+
+  // 从本地存档/用户档案读取脊兽人格测试结果
+  const loadPersonality = () => {
+    try {
+      const saved = Taro.getStorageSync('ridge_beast_result')
+      if (saved && saved.type) {
+        setPersonality(saved as RidgeBeastPersonality)
+        return
+      }
+    } catch { /* ignore */ }
+    setPersonality(user?.ridge_beast_personality || null)
+  }
+
+  useDidShow(() => {
+    loadPersonality()
+  })
 
   useEffect(() => {
     const loadBadges = async () => {
@@ -58,15 +66,15 @@ const Profile: React.FC = () => {
     }
 
     loadBadges()
+    loadPersonality()
 
     if (user && user.spatial_profile) {
       setSpatialProfile(user.spatial_profile)
     }
   }, [user])
 
-  const handleTestComplete = (result: RidgeBeastPersonality) => {
-    setPersonality(result)
-    setShowTest(false)
+  const goPersonality = () => {
+    Taro.navigateTo({ url: '/pages/personality/index' })
   }
 
   const routePatternLabels: Record<string, string> = {
@@ -105,29 +113,30 @@ const Profile: React.FC = () => {
         </View>
       </View>
 
-      {showTest ? (
-        <View className="test-section">
-          <RidgeBeastTest onComplete={handleTestComplete} />
-          <button className="back-btn" onClick={() => setShowTest(false)}>
-            返回
-          </button>
-        </View>
-      ) : (
-        <>
-          {personality && (
-            <View className="personality-card">
+      <>
+          {personality ? (
+            <View
+              className="personality-card"
+              style={{ borderLeft: `4PX solid ${BEAST_PROFILES[personality.type].glaze.color}` }}
+            >
               <View className="personality-header">
                 <Text className="personality-title">脊兽人格</Text>
-                <button className="retry-btn" onClick={() => setShowTest(true)}>
-                  重新测试
+                <button className="retry-btn" onClick={goPersonality}>
+                  查看详情
                 </button>
               </View>
               <View className="personality-content">
-                <View className="beast-icon">
-                  <span>{personality.type}</span>
+                <View
+                  className="beast-icon"
+                  style={{ background: BEAST_PROFILES[personality.type].glaze.gradient }}
+                >
+                  <span>{BEAST_PROFILES[personality.type].emoji}</span>
                 </View>
                 <View className="beast-info">
-                  <Text className="beast-name">{personality.type}</Text>
+                  <Text className="beast-name">
+                    {personality.type}·{BEAST_PROFILES[personality.type].alias}
+                    <Text className="beast-glaze-tag">{BEAST_PROFILES[personality.type].glaze.name}</Text>
+                  </Text>
                   <View className="traits-row">
                     {personality.traits.map((trait, index) => (
                       <span key={index} className="trait-tag">{trait}</span>
@@ -135,6 +144,16 @@ const Profile: React.FC = () => {
                   </View>
                   <Text className="beast-desc">{personality.description}</Text>
                 </View>
+              </View>
+            </View>
+          ) : (
+            <View className="personality-card">
+              <View className="personality-header">
+                <Text className="personality-title">脊兽人格</Text>
+              </View>
+              <View className="personality-empty" onClick={goPersonality}>
+                <Text className="personality-empty-icon">🏯</Text>
+                <Text className="personality-empty-text">还未测试，去看看你是屋脊上的哪尊脊兽 →</Text>
               </View>
             </View>
           )}
@@ -164,7 +183,7 @@ const Profile: React.FC = () => {
           <BadgeDisplay badges={badges} />
 
           <View className="actions-card">
-            <button className="action-item" onClick={() => setShowTest(true)}>
+            <button className="action-item" onClick={goPersonality}>
               <span className="action-icon">🐉</span>
               <span className="action-label">脊兽人格测试</span>
             </button>
@@ -189,8 +208,7 @@ const Profile: React.FC = () => {
               <span className="action-label">开发者模式</span>
             </button>
           </View>
-        </>
-      )}
+      </>
 
       {showDeveloperMode && (
         <DeveloperMode onClose={() => setShowDeveloperMode(false)} />

@@ -1,7 +1,7 @@
 import { supabase } from '@/utils/supabase'
 import {
   User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter,
-  ColorWordLink, BodyRecord, BodyStory, BodyColor,
+  ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality,
 } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
@@ -46,6 +46,8 @@ const mockBadges: Badge[] = [
   { id: 'badge-001', name: '初访者', description: '第一次来到琉璃文创园区', pixel_image: '🎖️', condition: { type: 'visit', target: 'any', value: 1 }, rarity: 'common', created_at: new Date().toISOString() },
   { id: 'badge-002', name: '文字探索者', description: '成功回答文字历史连廊问题', pixel_image: '📜', condition: { type: 'quiz', poiId: 'poi-001' }, rarity: 'rare', created_at: new Date().toISOString() },
   { id: 'badge-003', name: '灵感收集者', description: '收集了10条灵感', pixel_image: '✨', condition: { type: 'inspiration', target: 'collect', value: 10 }, rarity: 'rare', created_at: new Date().toISOString() },
+  { id: 'badge-004', name: '识兽者', description: '完成脊兽人格测试，找到屋脊上属于你的那尊脊兽', pixel_image: '🏯', condition: { type: 'quiz', target: 'beast_test', value: 1 }, rarity: 'common' },
+  { id: 'badge-005', name: '骑凤仙人', description: '四维皆衡，进退有度——传说走投无路时，凤凰会载你腾空而起', pixel_image: '🕊️', condition: { type: 'quiz', target: 'beast_test_immortal', value: 1 }, rarity: 'legendary' },
 ]
 
 const mockMessages: InspirationMessage[] = [
@@ -159,6 +161,47 @@ export const api = {
       } catch (error) {
         console.warn('Supabase get user failed:', error)
         return userStore[openid] || null
+      }
+    },
+  },
+
+  user: {
+    // 保存脊兽人格测试结果（重测覆盖）
+    async savePersonality(userId: string, personality: RidgeBeastPersonality): Promise<void> {
+      if (!useSupabase) {
+        const target = Object.values(userStore).find(u => u.id === userId)
+        if (target) target.ridge_beast_personality = personality
+        return
+      }
+
+      try {
+        await supabase.from('users').update(
+          { ridge_beast_personality: personality, updated_at: new Date().toISOString() },
+          'id', userId,
+        )
+      } catch (error) {
+        console.warn('Supabase save personality failed:', error)
+      }
+    },
+
+    // 增加灵感值，返回更新后的总值（失败时返回 null）
+    async addInspiration(userId: string, delta: number): Promise<number | null> {
+      if (!useSupabase) {
+        const target = Object.values(userStore).find(u => u.id === userId)
+        if (!target) return null
+        target.inspiration_value += delta
+        return target.inspiration_value
+      }
+
+      try {
+        const { data: userData } = await supabase.from('users').eqSingle('id', userId)
+        if (!userData) return null
+        const next = ((userData.inspiration_value as number) || 0) + delta
+        await supabase.from('users').update({ inspiration_value: next }, 'id', userId)
+        return next
+      } catch (error) {
+        console.warn('Supabase add inspiration failed:', error)
+        return null
       }
     },
   },

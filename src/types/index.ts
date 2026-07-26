@@ -65,11 +65,25 @@ export interface SpatialProfile {
   inspiration_adoptions: number;
 }
 
+export type RidgeBeastType = '龙' | '凤' | '狮子' | '天马' | '海马' | '狻猊' | '狎鱼' | '獬豸' | '斗牛' | '行什';
+
+export interface RidgeBeastScores {
+  V: number; // 视野：广游开拓(+) / 深耕沉潜(-)
+  J: number; // 判断：理法明辨(+) / 情美直觉(-)
+  R: number; // 站位：台前引领(+) / 幕后守护(-)
+  C: number; // 应对：迎击化解(+) / 未雨绸缪(-)
+}
+
 export interface RidgeBeastPersonality {
-  type: '龙' | '凤' | '狮子' | '天马' | '海马' | '狻猊' | '狎鱼' | '獬豸' | '斗牛' | '行什';
+  type: RidgeBeastType;
   traits: string[];
   description: string;
   customized_image: string;
+  scores?: RidgeBeastScores; // 四维归一化得分（-1 ~ +1）
+  secondary_type?: RidgeBeastType; // 副脊兽（次近原型）
+  confidence?: number; // 匹配置信度 0~1（1 - d1/d2）
+  is_immortal?: boolean; // 是否触发骑凤仙人隐藏彩蛋
+  tested_at?: string; // 最近一次测试时间
 }
 
 export interface ShopItem {
