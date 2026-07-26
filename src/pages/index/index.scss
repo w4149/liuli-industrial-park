@@ -134,7 +134,8 @@
   border-top: 1PX solid hsl(var(--border));
   display: flex;
   padding: 12px 0;
-  z-index: 100;
+  // 高于高德地图内部图层（amap-markers 120 / logo 160），避免地图标记抢占 tab 点击；低于弹窗层
+  z-index: 200;
 }
 
 .tab-item {
