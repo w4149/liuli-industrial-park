@@ -181,6 +181,16 @@
   color: hsl(var(--foreground));
 }
 
+// 行内脊兽小图标（身份栏/关系图鉴），与文字基线对齐
+.hs-beast-icon {
+  display: inline-block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  vertical-align: -12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
 .hs-disguise-tag {
   font-size: 12px;
   font-weight: 600;

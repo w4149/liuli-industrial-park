@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
-import { View, Text, Input } from '@tarojs/components'
+import { View, Text, Input, Image } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
-import { BEAST_PROFILES } from '@/data/ridgeBeasts'
+import { BEAST_PROFILES, IMMORTAL_INFO } from '@/data/ridgeBeasts'
 import { ALL_BEASTS, BEAST_LIKES, beastLikes, beastLikedBy, beastDislikedBy, beastDislikes } from '@/data/beastRelations'
 import { getCustomSpells, refreshCustomSpellsFromCloud } from '@/data/customSpells'
 import { HideSeekPresence, HideSeekDuel } from '@/types'
@@ -75,10 +75,19 @@ const getUserKey = (): string => {
 // 防止昵称注入 HTML
 const escapeHtml = (str: string) => str.replace(/[<>&"']/g, '')
 
+// 图标档案：十兽取自 BEAST_PROFILES，骑凤仙人（隐藏彩蛋）取自 IMMORTAL_INFO
+const BEAST_ICON_MAP: Record<string, any> = {
+  ...(BEAST_PROFILES as Record<string, any>),
+  骑凤仙人: {
+    emoji: IMMORTAL_INFO.emoji,
+    image: IMMORTAL_INFO.image,
+    glaze: { gradient: 'linear-gradient(160deg, #C9A86A 0%, #8A6D3B 100%)' },
+  },
+}
+
 // 玩家标记 HTML：脊兽小图标 + 昵称牌
 const buildMarkerHtml = (beastType: string, nickname: string, isSelf: boolean) => {
-  const profiles = BEAST_PROFILES as Record<string, any>
-  const profile = beastType && profiles[beastType] ? profiles[beastType] : null
+  const profile = beastType && BEAST_ICON_MAP[beastType] ? BEAST_ICON_MAP[beastType] : null
   const inner = profile
     ? (profile.image
       ? `<img src="${profile.image}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
@@ -103,6 +112,15 @@ const formatMmSs = (ms: number) => {
 const formatHhMm = (iso: string) => {
   const d = new Date(iso)
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+}
+
+// 行内脊兽小图标：插画就位用图片，缺图回退 emoji
+const BeastIcon: React.FC<{ beast: string; fallback?: string }> = ({ beast, fallback = '🐾' }) => {
+  const profile = beast ? BEAST_ICON_MAP[beast] : null
+  if (profile && profile.image) {
+    return <Image className="hs-beast-icon" src={profile.image} mode="aspectFill" />
+  }
+  return <Text>{profile ? profile.emoji : fallback}</Text>
 }
 
 const HideSeek: React.FC = () => {
@@ -370,8 +388,15 @@ const HideSeek: React.FC = () => {
     saveProbe(null)
     probePhaseRef.current = 'none'
     setProbePhase('none')
+    setProbeLeftMs(0)
+    // 上一轮被探查现形的形象立刻还原成默认隐匿图标：
+    // tick 里的「现形结束」分支因 probeRef 已清空不会再触发，必须在这里主动重建自己的标记
+    refreshMyMarkerContent()
+    // 被探查相关弹窗随新一轮作废
+    setActiveModal((m) => (m === 'probeAlert' || m === 'probeTarget' ? '' : m))
     if (wasOver) broadcastStatus(STATUS_REVIVE) // 向对手声明自己重新在场
     Taro.showToast({ title: '🔄 新一轮开始！状态已重置', icon: 'none', duration: 2500 })
+    // startGameLoops 内部会立即 syncPresence，把还原后的隐匿形象同步给全场
     if (mapReadyRef.current) startGameLoops()
   }
 
@@ -917,7 +942,20 @@ const HideSeek: React.FC = () => {
       }
     }, 1000)
 
+    // 手机锁屏/切后台时浏览器会挂起定时器，回到前台立刻补拉一次：
+    // 否则重置广播要等下一轮轮询才生效，体验上就像必须重新进页面
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || !identityRef.current) return
+      refreshRoundSince().then(applyRoundResetIfNeeded)
+      pollFeed()
+      pollDuels()
+      pollProbes()
+      if (!gameOverRef.current) syncPresence()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisible)
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current)
         watchIdRef.current = null
@@ -957,7 +995,6 @@ const HideSeek: React.FC = () => {
   // ===== 渲染 =====
 
   const myBeast = identityBeast()
-  const myBeastProfile = myBeast ? (BEAST_PROFILES as Record<string, any>)[myBeast] : null
   const likedByMine = myBeast && myBeast in BEAST_LIKES ? beastLikedBy(myBeast as any) : []
   const dislikedByMine = myBeast && myBeast in BEAST_LIKES ? beastDislikedBy(myBeast as any) : []
 
@@ -988,7 +1025,7 @@ const HideSeek: React.FC = () => {
       {identity && (
         <View className="hs-identity-bar">
           <Text className="hs-identity-name">
-            {myBeastProfile ? myBeastProfile.emoji : '🐾'} {nickname} · {myBeast}
+            <BeastIcon beast={myBeast} /> {nickname} · {myBeast}
           </Text>
           {probePhase === 'warn' && (
             <Text className="hs-probe-tag warn" onClick={() => setActiveModal('probeAlert')}>⚠️ 被探查 {formatMmSs(probeLeftMs)}</Text>
@@ -1129,7 +1166,7 @@ const HideSeek: React.FC = () => {
             {relationsView === 'mine' ? (
               <View className="hs-relations-mine">
                 <View className="hs-relation-item">
-                  <Text className="hs-relation-name">我的真身：{myBeastProfile ? myBeastProfile.emoji : '🐾'} {myBeast || '未入局'}</Text>
+                  <Text className="hs-relation-name">我的真身：<BeastIcon beast={myBeast} /> {myBeast || '未入局'}</Text>
                   <Text className="hs-relation-likes">😍 喜欢我的：{likedByMine.join('、') || '—'}</Text>
                   <Text className="hs-relation-dislikes">😡 不喜欢我的：{dislikedByMine.join('、') || '—'}</Text>
                 </View>
@@ -1139,7 +1176,7 @@ const HideSeek: React.FC = () => {
                 {ALL_BEASTS.map((beast) => (
                   <View key={beast} className="hs-relation-item">
                     <Text className="hs-relation-name">
-                      {(BEAST_PROFILES as Record<string, any>)[beast] ? (BEAST_PROFILES as Record<string, any>)[beast].emoji : '🧘'} {beast}
+                      <BeastIcon beast={beast} fallback="🧘" /> {beast}
                     </Text>
                     <Text className="hs-relation-likes">喜欢：{BEAST_LIKES[beast].join('、')}</Text>
                     <Text className="hs-relation-dislikes">不喜欢：{beastDislikes(beast).join('、')}</Text>
