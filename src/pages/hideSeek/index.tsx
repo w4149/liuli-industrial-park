@@ -368,7 +368,7 @@ const HideSeek: React.FC = () => {
   }
 
   // 发现新一轮（开发者重置广播）后，本机同步开启新一轮：
-  // 清出局/探查状态，重开 10 分钟窗口（修复其他设备重置后仍卡在 game over 的问题）；
+  // 清空本局身份与状态、清空全局战报，踢回入局门禁——所有玩家需重新输入昵称和身份咒语；
   // 咒语存云端跨轮次保留，不随重置清空
   const applyRoundResetIfNeeded = () => {
     const round = roundSinceRef.current
@@ -378,26 +378,48 @@ const HideSeek: React.FC = () => {
     roundAppliedRef.current = round
     try { Taro.setStorageSync(ROUND_APPLIED_STORAGE, round) } catch { /* ignore */ }
     if (!identityRef.current) return
-    const wasOver = !!gameOverRef.current
+    // 撤下自己在服务端的在场记录，清掉地图上所有玩家标记（含上一轮被探查现形的形象）
+    api.hideSeek.removePresence(userKeyRef.current)
+    if (mapRef.current) {
+      try {
+        if (myMarkerRef.current) mapRef.current.remove(myMarkerRef.current)
+        otherMarkersRef.current.forEach((marker) => mapRef.current.remove(marker))
+      } catch { /* ignore */ }
+    }
+    myMarkerRef.current = null
+    otherMarkersRef.current.clear()
+    setOthersOnline([])
+    setOnlineCount(0)
+    // 清空本局身份与状态，回到入局门禁重新输入昵称和身份咒语
+    identityRef.current = ''
+    setIdentity('')
+    nicknameRef.current = ''
+    setNickname('')
     gameOverRef.current = ''
     setGameOver('')
-    try { Taro.setStorageSync(GAMEOVER_STORAGE, '') } catch { /* ignore */ }
-    saveDeadline(Date.now() + DUEL_WINDOW)
-    saveDuelSince(new Date().toISOString())
-    saveProbeSince(new Date().toISOString())
-    saveProbe(null)
+    deadlineRef.current = 0
+    duelSinceRef.current = ''
+    probeSinceRef.current = ''
+    probeRef.current = null
     probePhaseRef.current = 'none'
     setProbePhase('none')
     setProbeLeftMs(0)
-    // 上一轮被探查现形的形象立刻还原成默认隐匿图标：
-    // tick 里的「现形结束」分支因 probeRef 已清空不会再触发，必须在这里主动重建自己的标记
-    refreshMyMarkerContent()
-    // 被探查相关弹窗随新一轮作废
-    setActiveModal((m) => (m === 'probeAlert' || m === 'probeTarget' ? '' : m))
-    if (wasOver) broadcastStatus(STATUS_REVIVE) // 向对手声明自己重新在场
-    Taro.showToast({ title: '🔄 新一轮开始！状态已重置', icon: 'none', duration: 2500 })
-    // startGameLoops 内部会立即 syncPresence，把还原后的隐匿形象同步给全场
-    if (mapReadyRef.current) startGameLoops()
+    pendingProbeSpellRef.current = ''
+    setActiveModal('')
+    try {
+      Taro.removeStorageSync(IDENTITY_STORAGE)
+      Taro.removeStorageSync(NICKNAME_STORAGE)
+      Taro.removeStorageSync(GAMEOVER_STORAGE)
+      Taro.removeStorageSync(DEADLINE_STORAGE)
+      Taro.removeStorageSync(DUEL_SINCE_STORAGE)
+      Taro.removeStorageSync(PROBE_SINCE_STORAGE)
+      Taro.removeStorageSync(PROBE_STORAGE)
+    } catch { /* ignore */ }
+    // 全局战报随新一轮清空，重新入局后只看本轮事件（首拉游标会重算到本轮起点）
+    setFeed([])
+    feedSinceRef.current = ''
+    spellNickMapRef.current = {}
+    Taro.showToast({ title: '🔄 新一轮开始！请重新输入昵称和身份咒语入局', icon: 'none', duration: 3000 })
   }
 
   const markSpellUsedGlobal = (spell: string) => {

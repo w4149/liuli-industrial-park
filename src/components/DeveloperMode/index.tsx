@@ -503,7 +503,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       attacker_beast: 'ROUND_RESET',
       target_spell: 'ROUND',
     })
-    setHideSeekResetStatus('✅ 已开启新一轮：全场玩家状态与咒语使用次数已重置，咒语保留')
+    setHideSeekResetStatus('✅ 已开启新一轮：全场玩家被踢回入局门禁，需重新输入昵称与身份咒语；战报清空，咒语保留')
     setTimeout(() => setHideSeekResetStatus(''), 3000)
   }
 
