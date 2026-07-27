@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { POI } from '@/types'
-import { BEAST_PROFILES } from '@/data/ridgeBeasts'
 import { supabaseClient } from '@/utils/supabase/client'
 import { useUserStore } from '@/store/useUserStore'
 import marketAudioSrc from '@/assets/audio/danni-song.m4a'
@@ -106,16 +105,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     // 声音花园上传成功后刷新地图上的声音标记
     const refreshAudioMarkers = () => loadAudioMarkers()
     Taro.eventCenter.on('audioMarkersUpdated', refreshAudioMarkers)
-    // 完成脊兽测试后，把自身定位标记从红点换成脊兽小图标
-    const refreshUserMarkerIcon = () => {
-      if (userMarkerRef.current) {
-        userMarkerRef.current.setContent(getUserMarkerContent())
-      }
-    }
-    Taro.eventCenter.on('ridgeBeastUpdated', refreshUserMarkerIcon)
     return () => {
       Taro.eventCenter.off('audioMarkersUpdated', refreshAudioMarkers)
-      Taro.eventCenter.off('ridgeBeastUpdated', refreshUserMarkerIcon)
     }
   }, [])
 
@@ -633,21 +624,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     }
   }, [customMapUrl, customMapBounds, mapLoaded])
 
-  // 自身定位标记内容：完成脊兽测试后显示对应脊兽小图标，否则显示红点
-  const getUserMarkerContent = () => {
-    try {
-      const saved = Taro.getStorageSync('ridge_beast_result')
-      if (saved && saved.type && BEAST_PROFILES[saved.type]) {
-        const profile = BEAST_PROFILES[saved.type]
-        const inner = profile.image
-          ? `<img src="${profile.image}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
-          : `<span style="font-size:17px;line-height:1;">${profile.emoji}</span>`
-        return `<div style="width:32px;height:32px;border-radius:50%;background:${profile.glaze.gradient};display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.35);overflow:hidden;">${inner}</div>`
-      }
-    } catch { /* ignore */ }
-    return '<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>'
-  }
-
   const updateMarkerPosition = (lng: number, lat: number) => {
     if (userMarkerRef.current) {
       userMarkerRef.current.setPosition([lng, lat])
@@ -724,7 +700,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
         title: '我的位置',
         zIndex: 1000,
       })
-      userMarker.setContent(getUserMarkerContent())
+      userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
       mapRef.current.add(userMarker)
       userMarkerRef.current = userMarker
 
@@ -924,9 +900,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       },
       (error) => {
         console.warn(`Native watch error:`, error.code, error.message)
-        // 不销毁 watcher：超时后 watchPosition 会自行继续尝试；
-        // 长时间静默由心跳检测负责重启，避免频繁重订阅打断 GPS 首次锁定
-        watchFailedRef.current = true
+        // 不主动清除 — 心跳检测会处理
       },
       {
         enableHighAccuracy: true,
@@ -959,8 +933,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
           },
           () => { /* 静默失败 */ },
           {
-            // 低精度保底：本项目环境下高精度定位在室内/弱 GPS 时会直接失败，
-            // WiFi/基站网络定位才是可靠的保底层（watcher 被回收后由它继续供位）
             enableHighAccuracy: false,
             timeout: 10000,
             maximumAge: 3000,
@@ -1117,7 +1089,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
         title: '我的位置',
         zIndex: 1000,
       })
-      userMarker.setContent(getUserMarkerContent())
+      userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
       map.add(userMarker)
       userMarkerRef.current = userMarker
     }
