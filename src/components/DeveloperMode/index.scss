@@ -195,6 +195,33 @@
   border-radius: 12px;
 }
 
+.spell-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.spell-chip {
+  padding: 8px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  background: #fff;
+}
+
+.spell-chip.active {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.spell-chips.beasts .spell-chip {
+  padding: 6px 12px;
+}
+
 .points-list {
   max-height: 200px;
   overflow-y: auto;

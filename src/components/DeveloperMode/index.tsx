@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { supabaseClient } from '@/utils/supabase/client'
+import { ALL_BEASTS } from '@/data/beastRelations'
+import { CustomSpell, getCustomSpells, saveCustomSpells } from '@/data/customSpells'
 import './index.scss'
 
 interface CalibrationPoint {
@@ -14,6 +16,22 @@ interface CalibrationPoint {
 
 interface DeveloperModeProps {
   onClose: () => void
+}
+
+// 身份内置咒语，自定义咒语不得与之冲突
+const BUILTIN_SPELLS = ['飞龙在天', '雅梦', '嘉俊', 'wjj']
+
+const SPELL_TYPE_LABELS: Record<CustomSpell['type'], string> = {
+  disguise: '变身咒语',
+  identity: '身份咒语',
+  renew: '续命咒语',
+}
+
+// 咒语效果描述
+const spellEffectDesc = (s: CustomSpell) => {
+  if (s.type === 'disguise') return `变成「${s.beast}」5 分钟`
+  if (s.type === 'identity') return `对应脊兽「${s.beast}」`
+  return `倒计时增加 ${s.minutes} 分钟`
 }
 
 const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
@@ -29,6 +47,12 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   const [geolocationReady, setGeolocationReady] = useState(false)
   const [locationError, setLocationError] = useState<string>('')
   const [hideSeekResetStatus, setHideSeekResetStatus] = useState('')
+  const [customSpells, setCustomSpells] = useState<CustomSpell[]>(() => getCustomSpells())
+  const [newSpellText, setNewSpellText] = useState('')
+  const [newSpellType, setNewSpellType] = useState<CustomSpell['type']>('disguise')
+  const [newSpellBeast, setNewSpellBeast] = useState('')
+  const [newSpellMinutes, setNewSpellMinutes] = useState('')
+  const [spellStatus, setSpellStatus] = useState('')
   const geolocationRef = useRef<any>(null)
   const citySearchRef = useRef<any>(null)
 
@@ -212,12 +236,12 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     let magic = Math.sin(radLat)
     magic = 1 - ee * magic * magic
     const sqrtMagic = Math.sqrt(magic)
-    dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI)
-    dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI)
+    const fixedLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI)
+    const fixedLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI)
 
     return {
-      lng: lng + dLng,
-      lat: lat + dLat,
+      lng: lng + fixedLng,
+      lat: lat + fixedLat,
     }
   }
 
@@ -466,6 +490,56 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     setTimeout(() => setHideSeekResetStatus(''), 3000)
   }
 
+  const flashSpellStatus = (msg: string) => {
+    setSpellStatus(msg)
+    setTimeout(() => setSpellStatus(''), 3000)
+  }
+
+  const handleAddSpell = () => {
+    const spell = newSpellText.trim()
+    if (!spell) {
+      flashSpellStatus('请输入咒语内容')
+      return
+    }
+    if (BUILTIN_SPELLS.includes(spell)) {
+      flashSpellStatus('⚠️ 与内置咒语冲突，换一个吧')
+      return
+    }
+    if (customSpells.some((s) => s.spell === spell)) {
+      flashSpellStatus('⚠️ 这个咒语已存在')
+      return
+    }
+    if (newSpellType !== 'renew' && !newSpellBeast) {
+      flashSpellStatus('请选择对应的脊兽')
+      return
+    }
+    const minutes = parseInt(newSpellMinutes, 10)
+    if (newSpellType === 'renew' && (!minutes || minutes <= 0)) {
+      flashSpellStatus('请填写正确的续命分钟数')
+      return
+    }
+    const item: CustomSpell = {
+      id: Date.now().toString(),
+      spell,
+      type: newSpellType,
+      ...(newSpellType !== 'renew' ? { beast: newSpellBeast } : {}),
+      ...(newSpellType === 'renew' ? { minutes } : {}),
+    }
+    const updated = [...customSpells, item]
+    setCustomSpells(updated)
+    saveCustomSpells(updated)
+    setNewSpellText('')
+    setNewSpellBeast('')
+    setNewSpellMinutes('')
+    flashSpellStatus('✅ 咒语已添加（重置游戏时保留）')
+  }
+
+  const handleDeleteSpell = (id: string) => {
+    const updated = customSpells.filter((s) => s.id !== id)
+    setCustomSpells(updated)
+    saveCustomSpells(updated)
+  }
+
   if (!isAuthenticated) {
     return (
       <View className="dev-mode-container">
@@ -475,7 +549,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           
           <Input
             className="password-input"
-            type="password"
+            type={'password' as any}
             placeholder="请输入密码"
             value={password}
             onInput={(e: any) => setPassword(e.detail.value)}
@@ -590,6 +664,79 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
           <button className="refresh-btn" onClick={handleHideSeekReset}>
             ♻️ 躲猫猫重置
           </button>
+        </View>
+
+        <View className="section">
+          <Text className="section-title">✨ 咒语设置</Text>
+          <Input
+            className="name-input"
+            placeholder="输入新咒语（如：花开富贵）"
+            value={newSpellText}
+            onInput={(e: any) => setNewSpellText(e.detail.value)}
+          />
+
+          <View className="spell-chips">
+            {(Object.keys(SPELL_TYPE_LABELS) as CustomSpell['type'][]).map((t) => (
+              <View
+                key={t}
+                className={`spell-chip ${newSpellType === t ? 'active' : ''}`}
+                onClick={() => setNewSpellType(t)}
+              >
+                <Text>{SPELL_TYPE_LABELS[t]}</Text>
+              </View>
+            ))}
+          </View>
+
+          {newSpellType !== 'renew' ? (
+            <View className="spell-chips beasts">
+              {ALL_BEASTS.map((b) => (
+                <View
+                  key={b}
+                  className={`spell-chip ${newSpellBeast === b ? 'active' : ''}`}
+                  onClick={() => setNewSpellBeast(b)}
+                >
+                  <Text>{b}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Input
+              className="name-input"
+              type="number"
+              placeholder="续命分钟数（如：5）"
+              value={newSpellMinutes}
+              onInput={(e: any) => setNewSpellMinutes(e.detail.value)}
+            />
+          )}
+
+          {spellStatus && (
+            <Text className="upload-status">{spellStatus}</Text>
+          )}
+
+          <button className="upload-btn" onClick={handleAddSpell}>
+            ➕ 新增咒语
+          </button>
+
+          {customSpells.length === 0 ? (
+            <Text className="empty-text">暂无自定义咒语</Text>
+          ) : (
+            <View className="points-list">
+              {customSpells.map((s) => (
+                <View key={s.id} className="point-item">
+                  <View className="point-info">
+                    <Text className="point-name">{s.spell} · {SPELL_TYPE_LABELS[s.type]}</Text>
+                    <Text className="point-coords">{spellEffectDesc(s)}</Text>
+                  </View>
+                  <button
+                    className="delete-btn"
+                    onClick={() => handleDeleteSpell(s.id)}
+                  >
+                    删除
+                  </button>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View className="hint-section">

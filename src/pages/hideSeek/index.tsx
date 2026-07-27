@@ -4,6 +4,7 @@ import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { BEAST_PROFILES } from '@/data/ridgeBeasts'
 import { ALL_BEASTS, BEAST_LIKES, beastLikes, beastDislikes } from '@/data/beastRelations'
+import { getCustomSpells } from '@/data/customSpells'
 import { HideSeekPresence, HideSeekDuel } from '@/types'
 import { api } from '@/services/api'
 import { wgs84ToGcj02 } from '@/utils'
@@ -36,6 +37,13 @@ const IDENTITY_MAP: Record<string, string> = {
 }
 const DISGUISE_SPELL = '飞龙在天' // 变身咒语 → 龙
 const REVIVE_SPELL = 'wjj' // 复活咒语
+
+// 身份咒语 → 身份脊兽（内置优先，其次开发者模式新增的自定义身份咒语）
+const resolveIdentity = (spell: string): string => {
+  if (IDENTITY_MAP[spell]) return IDENTITY_MAP[spell]
+  const custom = getCustomSpells().find((c) => c.type === 'identity' && c.spell === spell)
+  return custom && custom.beast ? custom.beast : ''
+}
 
 // 设备级玩家标识：不依赖登录态，首次进入生成并持久化
 const getUserKey = (): string => {
@@ -125,8 +133,8 @@ const HideSeek: React.FC = () => {
 
   // ===== 身份与脊兽 =====
 
-  // 身份脊兽（凤 / 天马）
-  const identityBeast = () => IDENTITY_MAP[identityRef.current] || ''
+  // 身份脊兽（由身份咒语解析）
+  const identityBeast = () => resolveIdentity(identityRef.current)
 
   // 当前对外展示的脊兽（变身期间为龙）
   const currentBeast = () => {
@@ -320,7 +328,7 @@ const HideSeek: React.FC = () => {
         }
         saveDuelSince(d.created_at)
         // 跳过状态标记等非脊兽行
-        if (!BEAST_LIKES[d.attacker_beast]) continue
+        if (!(d.attacker_beast in BEAST_LIKES)) continue
         if (beastLikes(d.attacker_beast, identityBeast())) {
           // 喜欢我的脊兽点名 → 续命，重置 10 分钟
           saveDeadline(Date.now() + DUEL_WINDOW)
@@ -366,7 +374,7 @@ const HideSeek: React.FC = () => {
       Taro.showToast({ title: '请先起个昵称', icon: 'none' })
       return
     }
-    if (!IDENTITY_MAP[input]) {
+    if (!resolveIdentity(input)) {
       Taro.showToast({ title: '身份咒语不对', icon: 'none' })
       return
     }
@@ -395,28 +403,45 @@ const HideSeek: React.FC = () => {
     const input = spellInput.trim()
     setSpellInput('')
     setActiveModal('')
-    if (input !== DISGUISE_SPELL) {
+    // 内置变身咒语 + 自定义咒语（变身 / 续命）
+    const isBuiltinDisguise = input === DISGUISE_SPELL
+    const custom = getCustomSpells().find((c) => c.spell === input && c.type !== 'identity')
+    if (!isBuiltinDisguise && !custom) {
       Taro.showToast({ title: '咒语没有生效…', icon: 'none' })
       return
     }
-    // 变身咒语只能用一次
+    // 念动过的咒语只能用一次
     if (usedSpellsRef.current.disguise.includes(input)) {
       Taro.showToast({ title: '这个咒语已用过，失去效力了', icon: 'none', duration: 2000 })
       return
     }
     markSpellUsed('disguise', input)
-    const disguise = { beast: '龙', expires: Date.now() + DISGUISE_DURATION }
+    // 续命咒语：倒计时增加 X 分钟
+    if (!isBuiltinDisguise && custom && custom.type === 'renew') {
+      const addMinutes = custom.minutes || 0
+      saveDeadline(Math.max(deadlineRef.current, Date.now()) + addMinutes * 60 * 1000)
+      Taro.showToast({ title: `⏳ 续命成功 +${addMinutes} 分钟`, icon: 'none', duration: 2500 })
+      return
+    }
+    // 变身咒语：变成对应脊兽 5 分钟
+    const beast = isBuiltinDisguise ? '龙' : (custom?.beast || '龙')
+    const disguise = { beast, expires: Date.now() + DISGUISE_DURATION }
     disguiseRef.current = disguise
     try { Taro.setStorageSync(DISGUISE_STORAGE, disguise) } catch { /* ignore */ }
     setDisguiseLeftMs(DISGUISE_DURATION)
     refreshMyMarkerContent()
-    syncPresence() // 立即广播，让其他人看到我变成龙
-    Taro.showToast({ title: '🐉 飞龙在天！变身 5 分钟', icon: 'none', duration: 2500 })
+    syncPresence() // 立即广播，让其他人看到我的新形象
+    Taro.showToast({
+      title: isBuiltinDisguise ? '🐉 飞龙在天！变身 5 分钟' : `✨ 变身「${beast}」5 分钟`,
+      icon: 'none',
+      duration: 2500,
+    })
   }
 
   const handleDuelConfirm = async () => {
     const input = duelInput.trim()
-    if (!IDENTITY_MAP[input]) {
+    const targetBeast = resolveIdentity(input)
+    if (!targetBeast) {
       Taro.showToast({ title: '这不是有效的身份咒语', icon: 'none' })
       return
     }
@@ -450,7 +475,6 @@ const HideSeek: React.FC = () => {
       return
     }
     markSpellUsed('duel', input)
-    const targetBeast = IDENTITY_MAP[input]
     if (!beastLikes(identityBeast(), targetBeast)) {
       // 击中自己不喜欢的脊兽：对方出局，若对方尚在场则为自己续命
       if (targetAlive) {
@@ -501,7 +525,7 @@ const HideSeek: React.FC = () => {
       const savedIdentity = Taro.getStorageSync(IDENTITY_STORAGE)
       const savedNickname = Taro.getStorageSync(NICKNAME_STORAGE)
       // 昵称与身份必须成对，缺一不可则重新走门禁
-      if (savedIdentity && IDENTITY_MAP[savedIdentity] && savedNickname) {
+      if (savedIdentity && resolveIdentity(savedIdentity) && savedNickname) {
         identityRef.current = savedIdentity
         setIdentity(savedIdentity)
         nicknameRef.current = savedNickname
@@ -793,7 +817,7 @@ const HideSeek: React.FC = () => {
               {ALL_BEASTS.map((beast) => (
                 <View key={beast} className="hs-relation-item">
                   <Text className="hs-relation-name">
-                    {BEAST_PROFILES[beast] ? BEAST_PROFILES[beast].emoji : '🧘'} {beast}
+                    {(BEAST_PROFILES as Record<string, any>)[beast] ? (BEAST_PROFILES as Record<string, any>)[beast].emoji : '🧘'} {beast}
                   </Text>
                   <Text className="hs-relation-likes">喜欢：{BEAST_LIKES[beast].join('、')}</Text>
                   <Text className="hs-relation-dislikes">不喜欢：{beastDislikes(beast).join('、')}</Text>
