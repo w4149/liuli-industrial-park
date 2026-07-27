@@ -4,6 +4,7 @@ import AMapLoader from '@amap/amap-jsapi-loader'
 import { supabaseClient } from '@/utils/supabase/client'
 import { ALL_BEASTS } from '@/data/beastRelations'
 import { CustomSpell, getCustomSpells, saveCustomSpells } from '@/data/customSpells'
+import { api } from '@/services/api'
 import './index.scss'
 
 interface CalibrationPoint {
@@ -25,12 +26,14 @@ const SPELL_TYPE_LABELS: Record<CustomSpell['type'], string> = {
   disguise: '变身咒语',
   identity: '身份咒语',
   renew: '续命咒语',
+  probe: '探查咒语',
 }
 
 // 咒语效果描述
 const spellEffectDesc = (s: CustomSpell) => {
-  if (s.type === 'disguise') return `变成「${s.beast}」5 分钟`
+  if (s.type === 'disguise') return `被探查时伪装成「${s.beast}」`
   if (s.type === 'identity') return `对应脊兽「${s.beast}」`
+  if (s.type === 'probe') return '令一名在场玩家现形 5 分钟'
   return `倒计时增加 ${s.minutes} 分钟`
 }
 
@@ -475,18 +478,30 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   }
 
   const handleHideSeekReset = () => {
-    // 清空躲猫猫游戏状态（保留设备标识 user_key），重新进入即回到开始
+    // 清空躲猫猫游戏状态与自定义咒语（保留设备标识 user_key），重新进入即回到开始
     const keys = [
       'hide_seek_identity',
       'hide_seek_nickname',
       'hide_seek_gameover',
       'hide_seek_duel_deadline',
-      'hide_seek_disguise',
       'hide_seek_duel_since',
+      'hide_seek_probe',
+      'hide_seek_probe_since',
+      'hide_seek_custom_spells',
+      // 旧版残留 key，顺手清理
+      'hide_seek_disguise',
       'hide_seek_used_spells',
     ]
     keys.forEach((k) => localStorage.removeItem(k))
-    setHideSeekResetStatus('✅ 已重置，重新进入躲猫猫即回到开始状态')
+    setCustomSpells([])
+    // 广播新一轮开始：全场咒语使用次数从此刻重新计算
+    api.hideSeek.sendDuel({
+      attacker_key: 'system-reset',
+      attacker_name: '系统',
+      attacker_beast: 'ROUND_RESET',
+      target_spell: 'ROUND',
+    })
+    setHideSeekResetStatus('✅ 已开启新一轮：咒语已清空，全场使用次数已重置')
     setTimeout(() => setHideSeekResetStatus(''), 3000)
   }
 
@@ -509,7 +524,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       flashSpellStatus('⚠️ 这个咒语已存在')
       return
     }
-    if (newSpellType !== 'renew' && !newSpellBeast) {
+    if ((newSpellType === 'disguise' || newSpellType === 'identity') && !newSpellBeast) {
       flashSpellStatus('请选择对应的脊兽')
       return
     }
@@ -522,7 +537,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       id: Date.now().toString(),
       spell,
       type: newSpellType,
-      ...(newSpellType !== 'renew' ? { beast: newSpellBeast } : {}),
+      ...(newSpellType === 'disguise' || newSpellType === 'identity' ? { beast: newSpellBeast } : {}),
       ...(newSpellType === 'renew' ? { minutes } : {}),
     }
     const updated = [...customSpells, item]
@@ -531,7 +546,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     setNewSpellText('')
     setNewSpellBeast('')
     setNewSpellMinutes('')
-    flashSpellStatus('✅ 咒语已添加（重置游戏时保留）')
+    flashSpellStatus('✅ 咒语已添加（本轮有效，重置后清空）')
   }
 
   const handleDeleteSpell = (id: string) => {
@@ -687,7 +702,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
             ))}
           </View>
 
-          {newSpellType !== 'renew' ? (
+          {(newSpellType === 'disguise' || newSpellType === 'identity') && (
             <View className="spell-chips beasts">
               {ALL_BEASTS.map((b) => (
                 <View
@@ -699,7 +714,8 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
                 </View>
               ))}
             </View>
-          ) : (
+          )}
+          {newSpellType === 'renew' && (
             <Input
               className="name-input"
               type="number"

@@ -35,3 +35,11 @@ export const beastLikes = (attacker: string, target: string): boolean => {
 // 某尊脊兽的「不喜欢」名单（由喜欢名单推导）
 export const beastDislikes = (beast: RelationBeast): RelationBeast[] =>
   ALL_BEASTS.filter((b) => b !== beast && !BEAST_LIKES[beast].includes(b))
+
+// 喜欢某尊脊兽的名单（谁喜欢我）
+export const beastLikedBy = (beast: RelationBeast): RelationBeast[] =>
+  ALL_BEASTS.filter((b) => b !== beast && BEAST_LIKES[b].includes(beast))
+
+// 不喜欢某尊脊兽的名单（谁不喜欢我）
+export const beastDislikedBy = (beast: RelationBeast): RelationBeast[] =>
+  ALL_BEASTS.filter((b) => b !== beast && !BEAST_LIKES[b].includes(beast))

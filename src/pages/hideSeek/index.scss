@@ -191,12 +191,93 @@
   border-radius: 12px;
 }
 
+// 被探查状态标签：现形期紫色，警告期红色可点击重开伪装弹窗
+.hs-probe-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+  border: 1PX solid rgba(124, 58, 237, 0.35);
+  padding: 3px 10px;
+  border-radius: 12px;
+
+  &.warn {
+    color: #dc2626;
+    background: rgba(220, 38, 38, 0.12);
+    border-color: rgba(220, 38, 38, 0.35);
+  }
+}
+
 // ===== 操作按钮栏 =====
 
 .hs-action-bar {
   display: flex;
   gap: 12px;
   margin: 0 20px 16px;
+}
+
+// 全局战报跑马灯
+.hs-feed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 20px 16px;
+  padding: 10px 14px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.hs-feed-latest {
+  flex: 1;
+  font-size: 13px;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hs-feed-more {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+
+// 全局战报弹窗列表
+.hs-feed-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+.hs-feed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1PX solid hsl(var(--border));
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.hs-feed-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.6;
+}
+
+.hs-feed-text {
+  flex: 1;
+  font-size: 13px;
+  color: hsl(var(--foreground));
+  line-height: 1.6;
 }
 
 .hs-action-btn {
@@ -332,6 +413,33 @@
 
 // ===== 关系图鉴 =====
 
+// 标题行：左标题 + 右上角总览/返回切换
+.hs-relations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+
+  .hs-modal-title {
+    margin-bottom: 0;
+  }
+}
+
+.hs-relations-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.1);
+  border: 1PX solid hsl(var(--primary) / 0.35);
+  padding: 3px 12px;
+  border-radius: 12px;
+}
+
+.hs-relations-mine {
+  display: block;
+  margin-bottom: 14px;
+}
+
 .hs-relations-list {
   display: block;
   margin-bottom: 14px;
@@ -366,4 +474,30 @@
   font-size: 12px;
   color: #dc3545;
   line-height: 1.5;
+}
+
+// ===== 探查目标选择 =====
+
+.hs-probe-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.hs-probe-target {
+  padding: 8px 14px;
+  border: 1PX solid hsl(var(--border));
+  border-radius: 10PX;
+  background: hsl(var(--muted) / 0.3);
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+
+  &:active {
+    background: hsl(var(--primary) / 0.15);
+    border-color: hsl(var(--primary));
+  }
 }

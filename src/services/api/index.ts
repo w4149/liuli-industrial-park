@@ -711,6 +711,22 @@ export const api = {
         return []
       }
     },
+
+    // 拉取全场事件（sinceIso 之后，按时间升序），供全局战报通报
+    async getDuelsSince(sinceIso: string): Promise<HideSeekDuel[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('hide_seek_duels').select()
+        const list = (data || []) as HideSeekDuel[]
+        const since = new Date(sinceIso).getTime()
+        return list
+          .filter((d) => new Date(d.created_at).getTime() > since)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      } catch (error) {
+        console.warn('Get hide-seek feed failed:', error)
+        return []
+      }
+    },
   },
 
   // ===== 身体小故事 =====
