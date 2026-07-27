@@ -212,6 +212,7 @@
   font-weight: 600;
   color: hsl(var(--foreground));
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .hs-action-btn.primary {
@@ -289,6 +290,21 @@
 .hs-modal-actions {
   display: flex;
   gap: 12px;
+}
+
+// 身份咒语展示
+.hs-spell-reveal {
+  display: block;
+  text-align: center;
+  font-size: 26PX;
+  font-weight: 700;
+  letter-spacing: 6PX;
+  color: hsl(var(--primary));
+  background: hsl(var(--muted) / 0.4);
+  border: 1PX dashed hsl(var(--primary) / 0.5);
+  border-radius: 10PX;
+  padding: 14PX 0;
+  margin-bottom: 16px;
 }
 
 .hs-modal-btn {

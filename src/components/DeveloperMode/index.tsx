@@ -28,6 +28,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   const [isLocating, setIsLocating] = useState(false)
   const [geolocationReady, setGeolocationReady] = useState(false)
   const [locationError, setLocationError] = useState<string>('')
+  const [hideSeekResetStatus, setHideSeekResetStatus] = useState('')
   const geolocationRef = useRef<any>(null)
   const citySearchRef = useRef<any>(null)
 
@@ -449,6 +450,22 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     }
   }
 
+  const handleHideSeekReset = () => {
+    // 清空躲猫猫游戏状态（保留设备标识 user_key），重新进入即回到开始
+    const keys = [
+      'hide_seek_identity',
+      'hide_seek_nickname',
+      'hide_seek_gameover',
+      'hide_seek_duel_deadline',
+      'hide_seek_disguise',
+      'hide_seek_duel_since',
+      'hide_seek_used_spells',
+    ]
+    keys.forEach((k) => localStorage.removeItem(k))
+    setHideSeekResetStatus('✅ 已重置，重新进入躲猫猫即回到开始状态')
+    setTimeout(() => setHideSeekResetStatus(''), 3000)
+  }
+
   if (!isAuthenticated) {
     return (
       <View className="dev-mode-container">
@@ -563,6 +580,16 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
               ))}
             </View>
           )}
+        </View>
+
+        <View className="section">
+          <Text className="section-title">🙈 躲猫猫</Text>
+          {hideSeekResetStatus && (
+            <Text className="upload-status">{hideSeekResetStatus}</Text>
+          )}
+          <button className="refresh-btn" onClick={handleHideSeekReset}>
+            ♻️ 躲猫猫重置
+          </button>
         </View>
 
         <View className="hint-section">
