@@ -845,8 +845,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
   // 独立追踪 watcher 和 polling 的更新时间
   const lastWatcherUpdateRef = useRef<number>(0)
   const lastPollingUpdateRef = useRef<number>(0)
-  // watcher 本轮订阅的起始时间，用于主动续期
-  const watcherStartTimeRef = useRef<number>(0)
 
   // stopWatchers：只停止 watcher 相关，不动 polling
   const stopWatchers = () => {
@@ -890,14 +888,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       const watcherSilent = now - lastWatcherUpdateRef.current
       const pollingSilent = now - lastPollingUpdateRef.current
 
-      // 情况0：watcher 已连续订阅 >60s → 主动续期重订阅
-      // 移动端浏览器常在约 1-2 分钟后静默回收 GPS 会话（不报错但停止回调），
-      // 在被回收前抢先重订阅，保证定位持续可用
-      if (now - watcherStartTimeRef.current > 60000) {
-        console.log('🔄 定位会话续期：重订阅 watchPosition')
-        startNativeWatch()
-      }
-
       // 情况1：watcher 静默 >30s → 重启 watcher
       if (watcherSilent > 30000) {
         console.warn(`⚠️ Watcher 静默 ${Math.floor(watcherSilent / 1000)}s，重启`)
@@ -925,7 +915,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       navigator.geolocation.clearWatch(nativeWatchIdRef.current)
     }
 
-    watcherStartTimeRef.current = Date.now()
     nativeWatchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
         watchFailedRef.current = false
@@ -935,17 +924,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       },
       (error) => {
         console.warn(`Native watch error:`, error.code, error.message)
-        // 权限拒绝(code 1)不重试；GPS 不可用/超时则立即重订阅，
-        // 避免定位会话被浏览器回收后长期静默（timeout 20s 限流，不会形成紧循环）
-        if (error.code !== 1) {
-          if (nativeWatchIdRef.current !== null) {
-            navigator.geolocation.clearWatch(nativeWatchIdRef.current)
-            nativeWatchIdRef.current = null
-          }
-          window.setTimeout(() => {
-            if (nativeWatchIdRef.current === null) startNativeWatch()
-          }, 1000)
-        }
+        // 不销毁 watcher：超时后 watchPosition 会自行继续尝试；
+        // 长时间静默由心跳检测负责重启，避免频繁重订阅打断 GPS 首次锁定
+        watchFailedRef.current = true
       },
       {
         enableHighAccuracy: true,
@@ -978,9 +959,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
           },
           () => { /* 静默失败 */ },
           {
-            // 高精度模式：保持手机 GPS 引擎活跃（状态栏定位图标常亮），
-            // 低精度网络定位会让系统在 watcher 被回收后彻底放掉 GPS 会话
-            enableHighAccuracy: true,
+            // 低精度保底：本项目环境下高精度定位在室内/弱 GPS 时会直接失败，
+            // WiFi/基站网络定位才是可靠的保底层（watcher 被回收后由它继续供位）
+            enableHighAccuracy: false,
             timeout: 10000,
             maximumAge: 3000,
           }

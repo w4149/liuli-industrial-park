@@ -53,6 +53,7 @@ const HideSeek: React.FC = () => {
   const mapRef = useRef<any>(null)
   const initializedRef = useRef(false)
   const watchIdRef = useRef<number | null>(null)
+  const pollTimerRef = useRef<number | null>(null)
   const syncTimerRef = useRef<number | null>(null)
   const tickTimerRef = useRef<number | null>(null)
   const myPosRef = useRef<{ lng: number; lat: number } | null>(null)
@@ -163,25 +164,39 @@ const HideSeek: React.FC = () => {
       setLocStatus('failed')
       return
     }
+    // 位置到达统一处理（watch 与保底轮询共用）
+    const onFix = (position: GeolocationPosition) => {
+      const gcj02 = wgs84ToGcj02(position.coords.longitude, position.coords.latitude)
+      const firstFix = !myPosRef.current
+      myPosRef.current = gcj02
+      setLocStatus('ok')
+      updateMyMarker(gcj02.lng, gcj02.lat)
+      // 拿到首个定位后立即同步一次，不用等心跳
+      if (firstFix) syncPresence()
+    }
+
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current)
     }
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
-        const gcj02 = wgs84ToGcj02(position.coords.longitude, position.coords.latitude)
-        const firstFix = !myPosRef.current
-        myPosRef.current = gcj02
-        setLocStatus('ok')
-        updateMyMarker(gcj02.lng, gcj02.lat)
-        // 拿到首个定位后立即同步一次，不用等心跳
-        if (firstFix) syncPresence()
-      },
+      onFix,
       (error) => {
         console.warn('HideSeek watch error:', error.code, error.message)
         if (!myPosRef.current) setLocStatus('failed')
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 },
     )
+
+    // 低精度保底轮询：本项目环境下高精度定位在室内/弱 GPS 时会直接失败，
+    // WiFi/基站网络定位才是可靠保底（与首页地图同策略）
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+    pollTimerRef.current = window.setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        onFix,
+        () => { /* 静默失败，交给下一轮 */ },
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 },
+      )
+    }, 5000)
   }
 
   useEffect(() => {
@@ -262,6 +277,10 @@ const HideSeek: React.FC = () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current)
         watchIdRef.current = null
+      }
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current)
+        pollTimerRef.current = null
       }
       if (syncTimerRef.current) {
         clearInterval(syncTimerRef.current)
