@@ -106,6 +106,16 @@ export interface HideSeekPresence {
   updated_at: string;
 }
 
+// 躲猫猫对决事件：输入对方身份咒语产生一条记录
+export interface HideSeekDuel {
+  id: string;
+  attacker_key: string;
+  attacker_name: string;
+  attacker_beast: string; // 发起方当时的脊兽（含变身态）
+  target_spell: string; // 被点名的身份咒语
+  created_at: string;
+}
+
 export interface UserLocation {
   lat: number;
   lng: number;

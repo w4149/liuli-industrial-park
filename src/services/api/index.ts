@@ -1,7 +1,7 @@
 import { supabase } from '@/utils/supabase'
 import {
   User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter,
-  ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality, HideSeekPresence,
+  ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality, HideSeekPresence, HideSeekDuel,
 } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
@@ -681,6 +681,34 @@ export const api = {
         await supabase.from('hide_seek_presence').delete('user_key', userKey)
       } catch (error) {
         console.warn('Remove hide-seek presence failed:', error)
+      }
+    },
+
+    // 发起对决：输入对方身份咒语，落库一条事件
+    async sendDuel(duel: Omit<HideSeekDuel, 'id' | 'created_at'>): Promise<boolean> {
+      if (!useSupabase) return false
+      try {
+        await supabase.from('hide_seek_duels').insert([duel])
+        return true
+      } catch (error) {
+        console.warn('Send hide-seek duel failed:', error)
+        return false
+      }
+    },
+
+    // 拉取针对我的对决事件（sinceIso 之后，按时间升序）
+    async getDuelsForTarget(targetSpell: string, sinceIso: string): Promise<HideSeekDuel[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('hide_seek_duels').eq('target_spell', targetSpell)
+        const list = (data || []) as HideSeekDuel[]
+        const since = new Date(sinceIso).getTime()
+        return list
+          .filter((d) => new Date(d.created_at).getTime() > since)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      } catch (error) {
+        console.warn('Get hide-seek duels failed:', error)
+        return []
       }
     },
   },

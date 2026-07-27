@@ -1,17 +1,34 @@
 import React, { useRef, useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
-import { View, Text } from '@tarojs/components'
+import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { BEAST_PROFILES } from '@/data/ridgeBeasts'
-import { HideSeekPresence } from '@/types'
+import { ALL_BEASTS, BEAST_LIKES, beastLikes, beastDislikes } from '@/data/beastRelations'
+import { HideSeekPresence, HideSeekDuel } from '@/types'
 import { api } from '@/services/api'
-import { useUserStore } from '@/store/useUserStore'
 import { wgs84ToGcj02 } from '@/utils'
 import { mapConfig } from '@/config/map'
 import './index.scss'
 
-const SYNC_INTERVAL = 60 * 1000 // 位置每 1 分钟同步一次（类似微信共享定位）
+const SYNC_INTERVAL = 60 * 1000 // 位置每 1 分钟同步一次
+const DUEL_POLL_INTERVAL = 10 * 1000 // 对决事件每 10 秒轮询一次
+const DUEL_WINDOW = 10 * 60 * 1000 // 10 分钟内必须被喜欢的脊兽续命
+const DISGUISE_DURATION = 5 * 60 * 1000 // 变身咒语持续 5 分钟
+
 const USER_KEY_STORAGE = 'hide_seek_user_key'
+const IDENTITY_STORAGE = 'hide_seek_identity'
+const GAMEOVER_STORAGE = 'hide_seek_gameover'
+const DEADLINE_STORAGE = 'hide_seek_duel_deadline'
+const DISGUISE_STORAGE = 'hide_seek_disguise'
+const DUEL_SINCE_STORAGE = 'hide_seek_duel_since'
+
+// 身份咒语 → 身份脊兽
+const IDENTITY_MAP: Record<string, string> = {
+  雅梦: '凤',
+  嘉俊: '天马',
+}
+const DISGUISE_SPELL = '飞龙在天' // 变身咒语 → 龙
+const REVIVE_SPELL = 'wjj' // 复活咒语
 
 // 设备级玩家标识：不依赖登录态，首次进入生成并持久化
 const getUserKey = (): string => {
@@ -47,8 +64,14 @@ const buildMarkerHtml = (beastType: string, nickname: string, isSelf: boolean) =
   </div>`
 }
 
+const formatMmSs = (ms: number) => {
+  const s = Math.max(0, Math.ceil(ms / 1000))
+  const mm = Math.floor(s / 60)
+  const ss = s % 60
+  return `${mm}:${ss.toString().padStart(2, '0')}`
+}
+
 const HideSeek: React.FC = () => {
-  const { user } = useUserStore()
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const initializedRef = useRef(false)
@@ -56,43 +79,68 @@ const HideSeek: React.FC = () => {
   const pollTimerRef = useRef<number | null>(null)
   const syncTimerRef = useRef<number | null>(null)
   const tickTimerRef = useRef<number | null>(null)
+  const duelPollTimerRef = useRef<number | null>(null)
   const myPosRef = useRef<{ lng: number; lat: number } | null>(null)
   const myMarkerRef = useRef<any>(null)
   const otherMarkersRef = useRef<Map<string, any>>(new Map())
   const hasPannedRef = useRef(false)
   const lastSyncRef = useRef<number>(0)
   const userKeyRef = useRef<string>(getUserKey())
+  const mapReadyRef = useRef(false)
+
+  // 游戏状态（ref 供定时器读取，state 供渲染）
+  const identityRef = useRef<string>('')
+  const gameOverRef = useRef<string>('')
+  const disguiseRef = useRef<{ beast: string; expires: number } | null>(null)
+  const deadlineRef = useRef<number>(0)
+  const duelSinceRef = useRef<string>('')
+  const duelPollingRef = useRef(false)
 
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
   const [onlineCount, setOnlineCount] = useState(0)
   const [nextSyncIn, setNextSyncIn] = useState(60)
   const [locStatus, setLocStatus] = useState<'locating' | 'ok' | 'failed'>('locating')
+  const [identity, setIdentity] = useState('')
+  const [gameOver, setGameOver] = useState('') // '' | 'attack' | 'timeout'
+  const [duelLeftMs, setDuelLeftMs] = useState(DUEL_WINDOW)
+  const [disguiseLeftMs, setDisguiseLeftMs] = useState(0)
+  const [activeModal, setActiveModal] = useState('') // '' | 'relations' | 'spell' | 'duel'
+  const [gateInput, setGateInput] = useState('')
+  const [spellInput, setSpellInput] = useState('')
+  const [duelInput, setDuelInput] = useState('')
+  const [reviveInput, setReviveInput] = useState('')
 
-  // 自己的身份信息（昵称 + 脊兽）
-  const getIdentity = () => {
-    let beastType = ''
-    try {
-      const saved = Taro.getStorageSync('ridge_beast_result')
-      if (saved && saved.type) beastType = saved.type
-    } catch { /* ignore */ }
-    return {
-      nickname: user?.nickname || '神秘访客',
-      beast_type: beastType,
-    }
+  // ===== 身份与脊兽 =====
+
+  // 身份脊兽（凤 / 天马）
+  const identityBeast = () => IDENTITY_MAP[identityRef.current] || ''
+
+  // 当前对外展示的脊兽（变身期间为龙）
+  const currentBeast = () => {
+    const d = disguiseRef.current
+    if (d && d.expires > Date.now()) return d.beast
+    return identityBeast()
   }
 
-  // 上报自己位置 + 拉取其他玩家并刷新标记
+  const getIdentityInfo = () => ({
+    nickname: identityRef.current || '神秘访客',
+    beast_type: currentBeast(),
+  })
+
+  // ===== 位置同步（保留原策略）=====
+
   const syncPresence = async () => {
+    if (!identityRef.current || gameOverRef.current) return
     lastSyncRef.current = Date.now()
     const pos = myPosRef.current
-    const identity = getIdentity()
+    const info = getIdentityInfo()
 
     if (pos) {
       await api.hideSeek.upsertPresence({
         user_key: userKeyRef.current,
-        nickname: identity.nickname,
-        beast_type: identity.beast_type,
+        nickname: info.nickname,
+        beast_type: info.beast_type,
         lng: pos.lng,
         lat: pos.lat,
       })
@@ -110,14 +158,12 @@ const HideSeek: React.FC = () => {
     if (!map || !AMap) return
 
     const alive = new Set(others.map((p) => p.user_key))
-    // 移除已下线玩家
     otherMarkersRef.current.forEach((marker, key) => {
       if (!alive.has(key)) {
         map.remove(marker)
         otherMarkersRef.current.delete(key)
       }
     })
-    // 新增/更新在线玩家
     others.forEach((p) => {
       const existing = otherMarkersRef.current.get(p.user_key)
       if (existing) {
@@ -136,11 +182,18 @@ const HideSeek: React.FC = () => {
     })
   }
 
+  const refreshMyMarkerContent = () => {
+    if (myMarkerRef.current) {
+      const info = getIdentityInfo()
+      myMarkerRef.current.setContent(buildMarkerHtml(info.beast_type, info.nickname, true))
+    }
+  }
+
   const updateMyMarker = (lng: number, lat: number) => {
     const map = mapRef.current
     const AMap = (window as any).AMap
     if (!map || !AMap) return
-    const identity = getIdentity()
+    const info = getIdentityInfo()
     if (myMarkerRef.current) {
       myMarkerRef.current.setPosition([lng, lat])
     } else {
@@ -149,7 +202,7 @@ const HideSeek: React.FC = () => {
         anchor: 'top-center',
         zIndex: 1000,
       })
-      marker.setContent(buildMarkerHtml(identity.beast_type, identity.nickname, true))
+      marker.setContent(buildMarkerHtml(info.beast_type, info.nickname, true))
       map.add(marker)
       myMarkerRef.current = marker
     }
@@ -171,7 +224,6 @@ const HideSeek: React.FC = () => {
       myPosRef.current = gcj02
       setLocStatus('ok')
       updateMyMarker(gcj02.lng, gcj02.lat)
-      // 拿到首个定位后立即同步一次，不用等心跳
       if (firstFix) syncPresence()
     }
 
@@ -199,7 +251,190 @@ const HideSeek: React.FC = () => {
     }, 5000)
   }
 
+  // ===== 对决核心 =====
+
+  const saveDeadline = (ts: number) => {
+    deadlineRef.current = ts
+    try { Taro.setStorageSync(DEADLINE_STORAGE, ts) } catch { /* ignore */ }
+  }
+
+  const saveDuelSince = (iso: string) => {
+    duelSinceRef.current = iso
+    try { Taro.setStorageSync(DUEL_SINCE_STORAGE, iso) } catch { /* ignore */ }
+  }
+
+  const triggerGameOver = (reason: 'attack' | 'timeout') => {
+    if (gameOverRef.current) return
+    gameOverRef.current = reason
+    setGameOver(reason)
+    try { Taro.setStorageSync(GAMEOVER_STORAGE, reason) } catch { /* ignore */ }
+    // 停止共享：移除自己在地图和服务端的存在
+    api.hideSeek.removePresence(userKeyRef.current)
+    if (myMarkerRef.current && mapRef.current) {
+      try { mapRef.current.remove(myMarkerRef.current) } catch { /* ignore */ }
+      myMarkerRef.current = null
+    }
+  }
+
+  // 轮询针对我的对决事件
+  const pollDuels = async () => {
+    if (!identityRef.current || gameOverRef.current || duelPollingRef.current) return
+    duelPollingRef.current = true
+    try {
+      const duels = await api.hideSeek.getDuelsForTarget(identityRef.current, duelSinceRef.current)
+      for (const d of duels) {
+        if (d.attacker_key === userKeyRef.current) {
+          saveDuelSince(d.created_at)
+          continue
+        }
+        saveDuelSince(d.created_at)
+        if (beastLikes(d.attacker_beast, identityBeast())) {
+          // 喜欢我的脊兽点名 → 续命，重置 10 分钟
+          saveDeadline(Date.now() + DUEL_WINDOW)
+          Taro.showToast({ title: `${d.attacker_beast}为你续命 +10 分钟`, icon: 'none', duration: 2500 })
+        } else {
+          // 不喜欢我的脊兽点名 → game over
+          triggerGameOver('attack')
+          break
+        }
+      }
+    } finally {
+      duelPollingRef.current = false
+    }
+  }
+
+  const startGameLoops = () => {
+    // 首次进入：初始化 10 分钟窗口和对决事件游标
+    if (!deadlineRef.current) {
+      saveDeadline(Date.now() + DUEL_WINDOW)
+    }
+    if (!duelSinceRef.current) {
+      saveDuelSince(new Date().toISOString())
+    }
+    // 离开期间超时 → 直接 game over
+    if (deadlineRef.current <= Date.now()) {
+      triggerGameOver('timeout')
+      return
+    }
+    syncPresence()
+    if (syncTimerRef.current) clearInterval(syncTimerRef.current)
+    syncTimerRef.current = window.setInterval(syncPresence, SYNC_INTERVAL)
+    pollDuels()
+    if (duelPollTimerRef.current) clearInterval(duelPollTimerRef.current)
+    duelPollTimerRef.current = window.setInterval(pollDuels, DUEL_POLL_INTERVAL)
+  }
+
+  // ===== 交互 =====
+
+  const handleGateConfirm = () => {
+    const input = gateInput.trim()
+    if (!IDENTITY_MAP[input]) {
+      Taro.showToast({ title: '身份咒语不对', icon: 'none' })
+      return
+    }
+    identityRef.current = input
+    setIdentity(input)
+    try { Taro.setStorageSync(IDENTITY_STORAGE, input) } catch { /* ignore */ }
+    saveDeadline(Date.now() + DUEL_WINDOW)
+    saveDuelSince(new Date().toISOString())
+    setGateInput('')
+    refreshMyMarkerContent()
+    if (mapReadyRef.current) startGameLoops()
+  }
+
+  const handleSpellConfirm = () => {
+    const input = spellInput.trim()
+    setSpellInput('')
+    setActiveModal('')
+    if (input !== DISGUISE_SPELL) {
+      Taro.showToast({ title: '咒语没有生效…', icon: 'none' })
+      return
+    }
+    const disguise = { beast: '龙', expires: Date.now() + DISGUISE_DURATION }
+    disguiseRef.current = disguise
+    try { Taro.setStorageSync(DISGUISE_STORAGE, disguise) } catch { /* ignore */ }
+    setDisguiseLeftMs(DISGUISE_DURATION)
+    refreshMyMarkerContent()
+    syncPresence() // 立即广播，让其他人看到我变成龙
+    Taro.showToast({ title: '🐉 飞龙在天！变身 5 分钟', icon: 'none', duration: 2500 })
+  }
+
+  const handleDuelConfirm = async () => {
+    const input = duelInput.trim()
+    if (!IDENTITY_MAP[input]) {
+      Taro.showToast({ title: '这不是有效的身份咒语', icon: 'none' })
+      return
+    }
+    if (input === identityRef.current) {
+      Taro.showToast({ title: '不能对自己发起对决', icon: 'none' })
+      return
+    }
+    setDuelInput('')
+    setActiveModal('')
+    // 对决判定用真实身份脊兽，变身咒语只是形象伪装
+    const ok = await api.hideSeek.sendDuel({
+      attacker_key: userKeyRef.current,
+      attacker_name: identityRef.current,
+      attacker_beast: identityBeast(),
+      target_spell: input,
+    })
+    Taro.showToast({ title: ok ? `已向「${input}」发出对决咒语` : '发送失败，请重试', icon: 'none', duration: 2000 })
+  }
+
+  const handleRevive = () => {
+    if (reviveInput.trim() !== REVIVE_SPELL) {
+      Taro.showToast({ title: '复活咒语不对', icon: 'none' })
+      return
+    }
+    setReviveInput('')
+    gameOverRef.current = ''
+    setGameOver('')
+    try { Taro.setStorageSync(GAMEOVER_STORAGE, '') } catch { /* ignore */ }
+    // 忽略死亡期间的旧对决事件，重开 10 分钟窗口
+    saveDuelSince(new Date().toISOString())
+    saveDeadline(Date.now() + DUEL_WINDOW)
+    Taro.showToast({ title: '✨ 复活成功，继续游戏！', icon: 'none', duration: 2000 })
+    if (mapReadyRef.current) startGameLoops()
+  }
+
+  const handleBack = () => {
+    Taro.navigateBack({
+      fail: () => Taro.switchTab({ url: '/pages/index/index' }),
+    })
+  }
+
+  const handleRefresh = () => {
+    syncPresence()
+    pollDuels()
+    Taro.showToast({ title: '已刷新', icon: 'none', duration: 800 })
+  }
+
+  // ===== 生命周期 =====
+
   useEffect(() => {
+    // 恢复持久化的游戏状态
+    try {
+      const savedIdentity = Taro.getStorageSync(IDENTITY_STORAGE)
+      if (savedIdentity && IDENTITY_MAP[savedIdentity]) {
+        identityRef.current = savedIdentity
+        setIdentity(savedIdentity)
+      }
+      const savedGameOver = Taro.getStorageSync(GAMEOVER_STORAGE)
+      if (savedGameOver) {
+        gameOverRef.current = savedGameOver
+        setGameOver(savedGameOver)
+      }
+      const savedDeadline = Taro.getStorageSync(DEADLINE_STORAGE)
+      if (savedDeadline) deadlineRef.current = Number(savedDeadline)
+      const savedDisguise = Taro.getStorageSync(DISGUISE_STORAGE)
+      if (savedDisguise && savedDisguise.expires > Date.now()) {
+        disguiseRef.current = savedDisguise
+        setDisguiseLeftMs(savedDisguise.expires - Date.now())
+      }
+      const savedSince = Taro.getStorageSync(DUEL_SINCE_STORAGE)
+      if (savedSince) duelSinceRef.current = savedSince
+    } catch { /* ignore */ }
+
     const container = mapContainerRef.current
     if (!container || initializedRef.current) return
     initializedRef.current = true
@@ -244,12 +479,12 @@ const HideSeek: React.FC = () => {
         const onReady = () => {
           if (readyFired || !initializedRef.current) return
           readyFired = true
+          mapReadyRef.current = true
           setMapReady(true)
           startWatching()
-          // 先展示一次已有玩家（自己的位置到达后会再同步）
-          syncPresence()
-          // 每分钟心跳：上报自己 + 刷新他人
-          syncTimerRef.current = window.setInterval(syncPresence, SYNC_INTERVAL)
+          if (identityRef.current && !gameOverRef.current) {
+            startGameLoops()
+          }
         }
         map.on('complete', onReady)
         // 兜底：complete 偶发不触发时，3 秒后校正尺寸并强制就绪
@@ -265,11 +500,34 @@ const HideSeek: React.FC = () => {
         setMapError('地图加载失败，请检查网络后重试')
       })
 
-    // 下次刷新倒计时
+    // 1 秒节拍：刷新倒计时 / 变身过期 / 超时判定
     tickTimerRef.current = window.setInterval(() => {
       if (lastSyncRef.current) {
         const remain = Math.max(0, Math.ceil((SYNC_INTERVAL - (Date.now() - lastSyncRef.current)) / 1000))
         setNextSyncIn(remain)
+      }
+      // 变身过期 → 恢复本相并广播
+      const d = disguiseRef.current
+      if (d) {
+        const left = d.expires - Date.now()
+        if (left <= 0) {
+          disguiseRef.current = null
+          try { Taro.setStorageSync(DISGUISE_STORAGE, '') } catch { /* ignore */ }
+          setDisguiseLeftMs(0)
+          refreshMyMarkerContent()
+          syncPresence()
+          Taro.showToast({ title: '咒语失效，恢复本相', icon: 'none' })
+        } else {
+          setDisguiseLeftMs(left)
+        }
+      }
+      // 对决窗口倒计时
+      if (identityRef.current && !gameOverRef.current && deadlineRef.current) {
+        const left = deadlineRef.current - Date.now()
+        setDuelLeftMs(left)
+        if (left <= 0) {
+          triggerGameOver('timeout')
+        }
       }
     }, 1000)
 
@@ -286,11 +544,14 @@ const HideSeek: React.FC = () => {
         clearInterval(syncTimerRef.current)
         syncTimerRef.current = null
       }
+      if (duelPollTimerRef.current) {
+        clearInterval(duelPollTimerRef.current)
+        duelPollTimerRef.current = null
+      }
       if (tickTimerRef.current) {
         clearInterval(tickTimerRef.current)
         tickTimerRef.current = null
       }
-      // 退场：从共享位置表移除自己
       api.hideSeek.removePresence(userKeyRef.current)
       try {
         otherMarkersRef.current.clear()
@@ -302,20 +563,15 @@ const HideSeek: React.FC = () => {
       } catch (e) {
         console.warn('HideSeek map cleanup error:', e)
       }
+      mapReadyRef.current = false
       initializedRef.current = false
     }
   }, [])
 
-  const handleBack = () => {
-    Taro.navigateBack({
-      fail: () => Taro.switchTab({ url: '/pages/index/index' }),
-    })
-  }
+  // ===== 渲染 =====
 
-  const handleRefresh = () => {
-    syncPresence()
-    Taro.showToast({ title: '已刷新', icon: 'none', duration: 800 })
-  }
+  const myBeast = currentBeast()
+  const myBeastProfile = myBeast ? BEAST_PROFILES[myBeast] : null
 
   return (
     <View className="hide-seek-page">
@@ -341,6 +597,17 @@ const HideSeek: React.FC = () => {
         )}
       </View>
 
+      {identity && (
+        <View className="hs-identity-bar">
+          <Text className="hs-identity-name">
+            {myBeastProfile ? myBeastProfile.emoji : '🐾'} {identity} · {myBeast}
+          </Text>
+          {disguiseLeftMs > 0 && (
+            <Text className="hs-disguise-tag">变身 {formatMmSs(disguiseLeftMs)}</Text>
+          )}
+        </View>
+      )}
+
       <View className="hs-status-bar">
         <View className="hs-status-item">
           <Text className="hs-status-value">{onlineCount}</Text>
@@ -348,14 +615,138 @@ const HideSeek: React.FC = () => {
         </View>
         <View className="hs-status-item">
           <Text className="hs-status-value">{nextSyncIn}s</Text>
-          <Text className="hs-status-label">下次位置更新</Text>
+          <Text className="hs-status-label">位置更新</Text>
+        </View>
+        <View className={`hs-status-item ${duelLeftMs < 60 * 1000 ? 'danger' : ''}`}>
+          <Text className="hs-status-value">{identity ? formatMmSs(duelLeftMs) : '--'}</Text>
+          <Text className="hs-status-label">对决倒计时</Text>
+        </View>
+      </View>
+
+      <View className="hs-action-bar">
+        <View className="hs-action-btn" onClick={() => setActiveModal('relations')}>
+          <Text>💞 关系</Text>
+        </View>
+        <View className="hs-action-btn" onClick={() => setActiveModal('spell')}>
+          <Text>✨ 咒语</Text>
+        </View>
+        <View className="hs-action-btn primary" onClick={() => setActiveModal('duel')}>
+          <Text>⚔️ 对决</Text>
         </View>
       </View>
 
       <View className="hs-hint-card">
         <Text className="hs-hint-title">🙈 玩法说明</Text>
-        <Text className="hs-hint-text">进入本页即开始共享位置，地图上会显示此刻同样在玩的伙伴——每人以自己的脊兽小图标出现（未做脊兽测试则显示 🐾）。位置每 1 分钟更新一次，离开页面即停止共享。</Text>
+        <Text className="hs-hint-text">凭身份咒语入局，地图上以脊兽真身现形，位置每 1 分钟更新。每 10 分钟内必须有「喜欢你的脊兽」在对决中念出你的身份咒语为你续命；若被「不喜欢你的脊兽」点名，立即出局。念动变身咒语可幻化他兽 5 分钟，瞒天过海。</Text>
       </View>
+
+      {/* 身份咒语门禁 */}
+      {!identity && (
+        <View className="hs-overlay">
+          <View className="hs-modal">
+            <Text className="hs-modal-title">🏯 报上身份咒语</Text>
+            <Text className="hs-modal-desc">念出你的身份咒语，方可踏上屋脊入局</Text>
+            <Input
+              className="hs-modal-input"
+              value={gateInput}
+              placeholder="输入身份咒语…"
+              onInput={(e) => setGateInput(e.detail.value)}
+            />
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn ghost" onClick={handleBack}><Text>返回</Text></View>
+              <View className="hs-modal-btn primary" onClick={handleGateConfirm}><Text>入局</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Game Over 弹窗 */}
+      {identity && gameOver && (
+        <View className="hs-overlay">
+          <View className="hs-modal">
+            <Text className="hs-modal-title">💀 Game Over</Text>
+            <Text className="hs-modal-desc">
+              {gameOver === 'attack'
+                ? '你被不喜欢你的脊兽念中了身份咒语！'
+                : '10 分钟内没有喜欢你的脊兽为你续命…'}
+              {'\n'}请回到休息处休整，或输入复活咒语原地复活。
+            </Text>
+            <Input
+              className="hs-modal-input"
+              value={reviveInput}
+              placeholder="输入复活咒语…"
+              onInput={(e) => setReviveInput(e.detail.value)}
+            />
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn ghost" onClick={handleBack}><Text>回到休息处</Text></View>
+              <View className="hs-modal-btn primary" onClick={handleRevive}><Text>复活</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 关系图鉴 */}
+      {activeModal === 'relations' && (
+        <View className="hs-overlay" onClick={() => setActiveModal('')}>
+          <View className="hs-modal relations" onClick={(e) => e.stopPropagation()}>
+            <Text className="hs-modal-title">💞 脊兽喜爱关系</Text>
+            <View className="hs-relations-list">
+              {ALL_BEASTS.map((beast) => (
+                <View key={beast} className="hs-relation-item">
+                  <Text className="hs-relation-name">
+                    {BEAST_PROFILES[beast] ? BEAST_PROFILES[beast].emoji : '🧘'} {beast}
+                  </Text>
+                  <Text className="hs-relation-likes">喜欢：{BEAST_LIKES[beast].join('、')}</Text>
+                  <Text className="hs-relation-dislikes">不喜欢：{beastDislikes(beast).join('、')}</Text>
+                </View>
+              ))}
+            </View>
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn primary" onClick={() => setActiveModal('')}><Text>知道了</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 咒语输入 */}
+      {activeModal === 'spell' && (
+        <View className="hs-overlay" onClick={() => setActiveModal('')}>
+          <View className="hs-modal" onClick={(e) => e.stopPropagation()}>
+            <Text className="hs-modal-title">✨ 念动咒语</Text>
+            <Text className="hs-modal-desc">传说中有咒语能让脊兽幻化真形…</Text>
+            <Input
+              className="hs-modal-input"
+              value={spellInput}
+              placeholder="输入咒语…"
+              onInput={(e) => setSpellInput(e.detail.value)}
+            />
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn ghost" onClick={() => { setSpellInput(''); setActiveModal('') }}><Text>取消</Text></View>
+              <View className="hs-modal-btn primary" onClick={handleSpellConfirm}><Text>念咒</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 对决输入 */}
+      {activeModal === 'duel' && (
+        <View className="hs-overlay" onClick={() => setActiveModal('')}>
+          <View className="hs-modal" onClick={(e) => e.stopPropagation()}>
+            <Text className="hs-modal-title">⚔️ 发起对决</Text>
+            <Text className="hs-modal-desc">念出对方的身份咒语：喜欢 TA 的脊兽为 TA 续命，不喜欢 TA 的脊兽将 TA 打落屋脊</Text>
+            <Input
+              className="hs-modal-input"
+              value={duelInput}
+              placeholder="输入对方的身份咒语…"
+              onInput={(e) => setDuelInput(e.detail.value)}
+            />
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn ghost" onClick={() => { setDuelInput(''); setActiveModal('') }}><Text>取消</Text></View>
+              <View className="hs-modal-btn primary" onClick={handleDuelConfirm}><Text>出招</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   )
 }

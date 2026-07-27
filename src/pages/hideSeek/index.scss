@@ -47,7 +47,8 @@
   display: block;
   position: relative;
   margin: 16px 20px;
-  height: 420px;
+  // 用 vh 规避 pxtransform 缩放，让地图占据大半屏
+  height: 56vh;
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1PX solid hsl(var(--border));
@@ -114,6 +115,15 @@
   text-align: center;
 }
 
+.hs-status-item.danger {
+  border-color: rgba(220, 53, 69, 0.6);
+  background: rgba(220, 53, 69, 0.08);
+
+  .hs-status-value {
+    color: #dc3545;
+  }
+}
+
 .hs-status-value {
   font-size: 22px;
   font-weight: 700;
@@ -149,4 +159,195 @@
   font-size: 13px;
   color: hsl(var(--muted-foreground));
   line-height: 1.6;
+}
+
+// ===== 身份栏 =====
+
+.hs-identity-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 20px 16px;
+  padding: 12px 18px;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.hs-identity-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.hs-disguise-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+  border: 1PX solid rgba(124, 58, 237, 0.35);
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+// ===== 操作按钮栏 =====
+
+.hs-action-bar {
+  display: flex;
+  gap: 12px;
+  margin: 0 20px 16px;
+}
+
+.hs-action-btn {
+  flex: 1;
+  display: block;
+  text-align: center;
+  padding: 12px 0;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
+.hs-action-btn.primary {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+// ===== 弹窗 =====
+
+.hs-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 28px;
+}
+
+.hs-modal {
+  display: block;
+  width: 100%;
+  max-width: 340PX;
+  background: hsl(var(--card));
+  border: 1PX solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 22px 20px;
+}
+
+.hs-modal.relations {
+  max-height: 72vh;
+  overflow-y: auto;
+}
+
+.hs-modal-title {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.hs-modal-desc {
+  display: block;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.6;
+  text-align: center;
+  margin-bottom: 14px;
+  white-space: pre-line;
+}
+
+.hs-modal-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 44PX;
+  line-height: 44PX;
+  padding: 0 14PX;
+  font-size: 15PX;
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.4);
+  border: 1PX solid hsl(var(--border));
+  border-radius: 10PX;
+  margin-bottom: 16px;
+}
+
+.hs-modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.hs-modal-btn {
+  flex: 1;
+  display: block;
+  text-align: center;
+  padding: 11px 0;
+  border-radius: 10PX;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hs-modal-btn.ghost {
+  background: hsl(var(--muted) / 0.5);
+  border: 1PX solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.hs-modal-btn.primary {
+  background: hsl(var(--primary));
+  border: 1PX solid hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+// ===== 关系图鉴 =====
+
+.hs-relations-list {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.hs-relation-item {
+  display: block;
+  padding: 10px 12px;
+  border: 1PX solid hsl(var(--border));
+  border-radius: 10PX;
+  margin-bottom: 8px;
+  background: hsl(var(--muted) / 0.3);
+}
+
+.hs-relation-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  margin-bottom: 4px;
+}
+
+.hs-relation-likes {
+  display: block;
+  font-size: 12px;
+  color: #16a34a;
+  line-height: 1.5;
+}
+
+.hs-relation-dislikes {
+  display: block;
+  font-size: 12px;
+  color: #dc3545;
+  line-height: 1.5;
 }
