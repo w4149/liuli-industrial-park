@@ -10,6 +10,8 @@
     margin-bottom: 6px;
     flex-shrink: 0;
     position: relative;
+    // 左右留出返回箭头宽度，避免居中标题/副标题与箭头重叠
+    padding: 0 90px;
 
     .br-back {
       position: absolute;

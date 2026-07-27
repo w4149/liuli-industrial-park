@@ -4,7 +4,7 @@ import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { BEAST_PROFILES } from '@/data/ridgeBeasts'
 import { ALL_BEASTS, BEAST_LIKES, beastLikes, beastLikedBy, beastDislikedBy, beastDislikes } from '@/data/beastRelations'
-import { getCustomSpells } from '@/data/customSpells'
+import { getCustomSpells, refreshCustomSpellsFromCloud } from '@/data/customSpells'
 import { HideSeekPresence, HideSeekDuel } from '@/types'
 import { api } from '@/services/api'
 import { wgs84ToGcj02 } from '@/utils'
@@ -25,6 +25,7 @@ const DEADLINE_STORAGE = 'hide_seek_duel_deadline'
 const DUEL_SINCE_STORAGE = 'hide_seek_duel_since'
 const PROBE_STORAGE = 'hide_seek_probe'
 const PROBE_SINCE_STORAGE = 'hide_seek_probe_since'
+const ROUND_APPLIED_STORAGE = 'hide_seek_round_applied' // 本机已应用的轮次重置时间
 
 const EPOCH_ISO = '1970-01-01T00:00:00.000Z'
 // 状态标记行（借对决表广播，非脊兽 attacker_beast 会被对决判定跳过）
@@ -134,6 +135,8 @@ const HideSeek: React.FC = () => {
   const probeSinceRef = useRef<string>('')
   // 本轮起点（最近一次 ROUND_RESET 时间），全局咒语使用标记只认本轮之后的
   const roundSinceRef = useRef<string>(EPOCH_ISO)
+  // 本机已应用的轮次重置标记，避免同一次重置反复生效
+  const roundAppliedRef = useRef<string>('')
   // 已通过校验、等待选择探查目标的探查咒语
   const pendingProbeSpellRef = useRef<string>('')
   // 全局战报：拉取游标 / 防重入 / 身份咒语→昵称映射（战报只报昵称不泄露咒语）
@@ -346,6 +349,32 @@ const HideSeek: React.FC = () => {
     return rows.some((r) => r.attacker_beast === STATUS_SPELL_USED)
   }
 
+  // 发现新一轮（开发者重置广播）后，本机同步开启新一轮：
+  // 清出局/探查状态，重开 10 分钟窗口（修复其他设备重置后仍卡在 game over 的问题）；
+  // 咒语存云端跨轮次保留，不随重置清空
+  const applyRoundResetIfNeeded = () => {
+    const round = roundSinceRef.current
+    if (round === EPOCH_ISO) return
+    // 用时间戳比较：Supabase 返回 +00:00 后缀、本地写入 Z 后缀，字符串比较不可靠
+    if (roundAppliedRef.current && new Date(round).getTime() <= new Date(roundAppliedRef.current).getTime()) return
+    roundAppliedRef.current = round
+    try { Taro.setStorageSync(ROUND_APPLIED_STORAGE, round) } catch { /* ignore */ }
+    if (!identityRef.current) return
+    const wasOver = !!gameOverRef.current
+    gameOverRef.current = ''
+    setGameOver('')
+    try { Taro.setStorageSync(GAMEOVER_STORAGE, '') } catch { /* ignore */ }
+    saveDeadline(Date.now() + DUEL_WINDOW)
+    saveDuelSince(new Date().toISOString())
+    saveProbeSince(new Date().toISOString())
+    saveProbe(null)
+    probePhaseRef.current = 'none'
+    setProbePhase('none')
+    if (wasOver) broadcastStatus(STATUS_REVIVE) // 向对手声明自己重新在场
+    Taro.showToast({ title: '🔄 新一轮开始！状态已重置', icon: 'none', duration: 2500 })
+    if (mapReadyRef.current) startGameLoops()
+  }
+
   const markSpellUsedGlobal = (spell: string) => {
     api.hideSeek.sendDuel({
       attacker_key: userKeyRef.current,
@@ -456,6 +485,7 @@ const HideSeek: React.FC = () => {
         } else if (r.attacker_beast === STATUS_OUT) {
           items.push({ id, time, text: `💀 ${r.attacker_name} 出局了` })
         } else if (r.attacker_beast === STATUS_ROUND_RESET) {
+          if (r.created_at > roundSinceRef.current) roundSinceRef.current = r.created_at
           items.push({ id, time, text: '🔄 新一轮开始，咒语使用次数已重置' })
         }
       })
@@ -465,12 +495,16 @@ const HideSeek: React.FC = () => {
           return [...prev, ...items.filter((i) => !seen.has(i.id))].slice(-50)
         })
       }
+      // 战报里出现新的轮次重置 → 本机同步开启新一轮
+      applyRoundResetIfNeeded()
     } catch { /* ignore */ } finally {
       feedPollingRef.current = false
     }
   }
 
   const startGameLoops = () => {
+    // 预热云端咒语缓存（异步，失败保留本地缓存）
+    refreshCustomSpellsFromCloud()
     // 首次进入：初始化 10 分钟窗口和对决事件游标
     if (!deadlineRef.current) {
       saveDeadline(Date.now() + DUEL_WINDOW)
@@ -481,15 +515,17 @@ const HideSeek: React.FC = () => {
     if (!probeSinceRef.current) {
       saveProbeSince(new Date().toISOString())
     }
-    refreshRoundSince()
-    // 离开期间超时 → 直接 game over
+    refreshRoundSince().then(applyRoundResetIfNeeded)
+    // 离开期间超时 → game over，但轮询不能停：否则收不到轮次重置广播，会永远卡在出局状态
     if (deadlineRef.current <= Date.now()) {
       triggerGameOver('timeout')
-      return
     }
-    syncPresence()
-    if (syncTimerRef.current) clearInterval(syncTimerRef.current)
-    syncTimerRef.current = window.setInterval(syncPresence, SYNC_INTERVAL)
+    // 出局状态不共享位置；复活/新一轮时会重新调用本函数启动
+    if (!gameOverRef.current) {
+      syncPresence()
+      if (syncTimerRef.current) clearInterval(syncTimerRef.current)
+      syncTimerRef.current = window.setInterval(syncPresence, SYNC_INTERVAL)
+    }
     pollDuels()
     pollProbes()
     pollFeed()
@@ -503,13 +539,15 @@ const HideSeek: React.FC = () => {
 
   // ===== 交互 =====
 
-  const handleGateConfirm = () => {
+  const handleGateConfirm = async () => {
     const nick = gateNickInput.trim()
     const input = gateInput.trim()
     if (!nick) {
       Taro.showToast({ title: '请先起个昵称', icon: 'none' })
       return
     }
+    // 先拉云端最新咒语，支持开发者刚添加的自定义身份咒语入局
+    await refreshCustomSpellsFromCloud()
     if (!resolveIdentity(input)) {
       Taro.showToast({ title: '身份咒语不对', icon: 'none' })
       return
@@ -532,6 +570,9 @@ const HideSeek: React.FC = () => {
     saveProbe(null)
     probePhaseRef.current = 'none'
     setProbePhase('none')
+    // 入局时将当前时刻记为已应用轮次，入局前的历史重置不再重复生效
+    roundAppliedRef.current = new Date().toISOString()
+    try { Taro.setStorageSync(ROUND_APPLIED_STORAGE, roundAppliedRef.current) } catch { /* ignore */ }
     broadcastStatus(STATUS_REVIVE) // 新入局向对手声明自己在场
     setGateInput('')
     setGateNickInput('')
@@ -543,6 +584,8 @@ const HideSeek: React.FC = () => {
     const input = spellInput.trim()
     if (!input) return
     setSpellInput('')
+    // 先拉云端最新咒语，保证别的设备上新增的咒语本机也能念
+    await refreshCustomSpellsFromCloud()
     // 变身咒语只能在被探查时被动使用
     if (resolveDisguise(input)) {
       setActiveModal('')
@@ -627,6 +670,8 @@ const HideSeek: React.FC = () => {
       Taro.showToast({ title: '伪装窗口已结束', icon: 'none' })
       return
     }
+    // 先拉云端最新咒语，支持用别的设备上新增的变身咒语伪装
+    await refreshCustomSpellsFromCloud()
     const beast = resolveDisguise(input)
     if (!beast) {
       Taro.showToast({ title: '这不是有效的变身咒语', icon: 'none' })
@@ -647,6 +692,8 @@ const HideSeek: React.FC = () => {
 
   const handleDuelConfirm = async () => {
     const input = duelInput.trim()
+    // 先拉云端最新咒语，支持对方用自定义身份咒语入局的情况
+    await refreshCustomSpellsFromCloud()
     const targetBeast = resolveIdentity(input)
     if (!targetBeast) {
       Taro.showToast({ title: '这不是有效的身份咒语', icon: 'none' })
@@ -752,6 +799,8 @@ const HideSeek: React.FC = () => {
       if (savedSince) duelSinceRef.current = savedSince
       const savedProbeSince = Taro.getStorageSync(PROBE_SINCE_STORAGE)
       if (savedProbeSince) probeSinceRef.current = savedProbeSince
+      const savedRoundApplied = Taro.getStorageSync(ROUND_APPLIED_STORAGE)
+      if (savedRoundApplied) roundAppliedRef.current = savedRoundApplied
     } catch { /* ignore */ }
 
     const container = mapContainerRef.current
@@ -801,7 +850,8 @@ const HideSeek: React.FC = () => {
           mapReadyRef.current = true
           setMapReady(true)
           startWatching()
-          if (identityRef.current && !gameOverRef.current) {
+          // 出局状态也要启动循环（内部会跳过位置共享），否则收不到轮次重置广播
+          if (identityRef.current) {
             startGameLoops()
           }
         }

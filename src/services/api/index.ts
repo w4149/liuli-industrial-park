@@ -2,6 +2,7 @@ import { supabase } from '@/utils/supabase'
 import {
   User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter,
   ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality, HideSeekPresence, HideSeekDuel,
+  HideSeekSpell,
 } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
@@ -725,6 +726,40 @@ export const api = {
       } catch (error) {
         console.warn('Get hide-seek feed failed:', error)
         return []
+      }
+    },
+
+    // ===== 自定义咒语（仅开发者增删，全部玩家拉取使用）=====
+
+    // 拉取全部自定义咒语（按创建时间升序；失败抛错，由调用方决定是否保留本地缓存）
+    async getSpells(): Promise<HideSeekSpell[]> {
+      if (!useSupabase) return []
+      const { data } = await supabase.from('hide_seek_spells').select()
+      const list = (data || []) as HideSeekSpell[]
+      return list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    },
+
+    // 新增一条自定义咒语，返回落库后的完整行（失败返回 null）
+    async addSpell(spell: Omit<HideSeekSpell, 'id' | 'created_at'>): Promise<HideSeekSpell | null> {
+      if (!useSupabase) return null
+      try {
+        const { data } = await supabase.from('hide_seek_spells').insert([spell])
+        return data && data.length > 0 ? (data[0] as HideSeekSpell) : null
+      } catch (error) {
+        console.warn('Add hide-seek spell failed:', error)
+        return null
+      }
+    },
+
+    // 删除一条自定义咒语
+    async deleteSpell(id: string): Promise<boolean> {
+      if (!useSupabase) return false
+      try {
+        await supabase.from('hide_seek_spells').delete('id', id)
+        return true
+      } catch (error) {
+        console.warn('Delete hide-seek spell failed:', error)
+        return false
       }
     },
   },

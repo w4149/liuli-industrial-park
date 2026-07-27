@@ -116,6 +116,16 @@ export interface HideSeekDuel {
   created_at: string;
 }
 
+// 躲猫猫自定义咒语（仅开发者模式增删，存数据库全员共享）
+export interface HideSeekSpell {
+  id: string;
+  spell: string;
+  type: string; // disguise / identity / renew / probe
+  beast: string; // disguise/identity 类型对应的脊兽，其余为空串
+  minutes: number; // renew 类型的续命分钟数，其余为 0
+  created_at: string;
+}
+
 export interface UserLocation {
   lat: number;
   lng: number;

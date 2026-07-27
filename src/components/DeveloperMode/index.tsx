@@ -3,7 +3,7 @@ import { View, Text, Input } from '@tarojs/components'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { supabaseClient } from '@/utils/supabase/client'
 import { ALL_BEASTS } from '@/data/beastRelations'
-import { CustomSpell, getCustomSpells, saveCustomSpells } from '@/data/customSpells'
+import { CustomSpell, getCustomSpells, saveCustomSpells, refreshCustomSpellsFromCloud } from '@/data/customSpells'
 import { api } from '@/services/api'
 import './index.scss'
 
@@ -62,6 +62,8 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   useEffect(() => {
     loadCalibrationPoints()
     initGeolocation()
+    // 咒语存云端（hide_seek_spells 表），进页拉取最新列表
+    refreshCustomSpellsFromCloud().then(setCustomSpells)
   }, [])
 
   const loadCalibrationPoints = async () => {
@@ -478,7 +480,8 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   }
 
   const handleHideSeekReset = () => {
-    // 清空躲猫猫游戏状态与自定义咒语（保留设备标识 user_key），重新进入即回到开始
+    // 清空躲猫猫玩家状态（保留设备标识 user_key），重新进入即回到开始；
+    // 开发者添加的咒语存云端 hide_seek_spells 表，跨轮次保留不清
     const keys = [
       'hide_seek_identity',
       'hide_seek_nickname',
@@ -487,13 +490,12 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       'hide_seek_duel_since',
       'hide_seek_probe',
       'hide_seek_probe_since',
-      'hide_seek_custom_spells',
+      'hide_seek_round_applied',
       // 旧版残留 key，顺手清理
       'hide_seek_disguise',
       'hide_seek_used_spells',
     ]
     keys.forEach((k) => localStorage.removeItem(k))
-    setCustomSpells([])
     // 广播新一轮开始：全场咒语使用次数从此刻重新计算
     api.hideSeek.sendDuel({
       attacker_key: 'system-reset',
@@ -501,7 +503,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       attacker_beast: 'ROUND_RESET',
       target_spell: 'ROUND',
     })
-    setHideSeekResetStatus('✅ 已开启新一轮：咒语已清空，全场使用次数已重置')
+    setHideSeekResetStatus('✅ 已开启新一轮：全场玩家状态与咒语使用次数已重置，咒语保留')
     setTimeout(() => setHideSeekResetStatus(''), 3000)
   }
 
@@ -510,7 +512,7 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     setTimeout(() => setSpellStatus(''), 3000)
   }
 
-  const handleAddSpell = () => {
+  const handleAddSpell = async () => {
     const spell = newSpellText.trim()
     if (!spell) {
       flashSpellStatus('请输入咒语内容')
@@ -533,8 +535,19 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
       flashSpellStatus('请填写正确的续命分钟数')
       return
     }
+    // 先落库再上屏：咒语存数据库，全部玩家拉取后生效
+    const row = await api.hideSeek.addSpell({
+      spell,
+      type: newSpellType,
+      beast: newSpellType === 'disguise' || newSpellType === 'identity' ? newSpellBeast : '',
+      minutes: newSpellType === 'renew' ? minutes : 0,
+    })
+    if (!row) {
+      flashSpellStatus('❌ 保存到数据库失败，请检查网络后重试')
+      return
+    }
     const item: CustomSpell = {
-      id: Date.now().toString(),
+      id: row.id,
       spell,
       type: newSpellType,
       ...(newSpellType === 'disguise' || newSpellType === 'identity' ? { beast: newSpellBeast } : {}),
@@ -546,10 +559,15 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     setNewSpellText('')
     setNewSpellBeast('')
     setNewSpellMinutes('')
-    flashSpellStatus('✅ 咒语已添加（本轮有效，重置后清空）')
+    flashSpellStatus('✅ 咒语已存入数据库（全员可用，跨轮次保留）')
   }
-
-  const handleDeleteSpell = (id: string) => {
+  
+  const handleDeleteSpell = async (id: string) => {
+    const ok = await api.hideSeek.deleteSpell(id)
+    if (!ok) {
+      flashSpellStatus('❌ 删除失败，请检查网络后重试')
+      return
+    }
     const updated = customSpells.filter((s) => s.id !== id)
     setCustomSpells(updated)
     saveCustomSpells(updated)

@@ -10,7 +10,9 @@
   background: hsl(var(--card));
   border-bottom: 1PX solid hsl(var(--border));
   padding: 40px 20px 20px;
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .title {
@@ -20,13 +22,11 @@
 }
 
 .header-back-btn {
-  position: absolute;
-  left: 20px;
-  top: 40px;
   font-size: 24px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  padding: 8px;
+  line-height: 1;
+  padding: 4px 8px 4px 0;
 }
 
 .user-card {

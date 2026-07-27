@@ -1,7 +1,9 @@
 import Taro from '@tarojs/taro'
+import { api } from '@/services/api'
 
 // 自定义咒语（开发者模式[咒语设置]维护，躲猫猫页面消费）
-// 每轮重置时一并清空，新一轮需重新添加
+// 云端 hide_seek_spells 表是唯一权威来源，本地仅作缓存；
+// 每轮重置只清使用次数与玩家状态，咒语本身跨轮次保留
 export interface CustomSpell {
   id: string
   spell: string
@@ -30,5 +32,23 @@ export const saveCustomSpells = (list: CustomSpell[]) => {
     Taro.setStorageSync(CUSTOM_SPELLS_STORAGE, list)
   } catch {
     // ignore
+  }
+}
+
+// 从云端拉取咒语并刷新本地缓存；网络失败时保留现有缓存不动
+export const refreshCustomSpellsFromCloud = async (): Promise<CustomSpell[]> => {
+  try {
+    const rows = await api.hideSeek.getSpells()
+    const list: CustomSpell[] = rows.map((r) => ({
+      id: r.id,
+      spell: r.spell,
+      type: r.type as CustomSpell['type'],
+      ...(r.beast ? { beast: r.beast } : {}),
+      ...(r.minutes ? { minutes: r.minutes } : {}),
+    }))
+    saveCustomSpells(list)
+    return list
+  } catch {
+    return getCustomSpells()
   }
 }
