@@ -1,7 +1,7 @@
 import { supabase } from '@/utils/supabase'
 import {
   User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter,
-  ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality,
+  ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality, HideSeekPresence,
 } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
@@ -365,7 +365,10 @@ export const api = {
 
       try {
         const { data } = await supabase.from('badges').select()
-        return (data || mockBadges) as Badge[]
+        const remote = (data || []) as Badge[]
+        // 与本地徽章目录合并（id 去重）：新徽章未入库时也能完整展示锁定/解锁列表
+        const remoteIds = new Set(remote.map((b) => b.id))
+        return [...remote, ...mockBadges.filter((b) => !remoteIds.has(b.id))]
       } catch (error) {
         console.warn('Supabase get badges failed, using mock:', error)
         return mockBadges
@@ -637,6 +640,48 @@ export const api = {
         console.warn('Create body record failed:', error)
       }
       return { ...newRecord, id: `rec-${Date.now()}` } as BodyRecord
+    },
+  },
+
+  // ===== 脊兽躲猫猫：实时位置共享 =====
+  hideSeek: {
+    // 上报/更新自己的位置（按 user_key upsert）
+    async upsertPresence(presence: Omit<HideSeekPresence, 'id' | 'updated_at'>): Promise<void> {
+      if (!useSupabase) return
+      const payload = { ...presence, updated_at: new Date().toISOString() }
+      try {
+        const { data } = await supabase.from('hide_seek_presence').update(payload, 'user_key', presence.user_key)
+        if (!data || data.length === 0) {
+          await supabase.from('hide_seek_presence').insert([payload])
+        }
+      } catch (error) {
+        // 并发首次插入可能撞唯一约束，下一轮心跳会走 update 成功
+        console.warn('Upsert hide-seek presence failed:', error)
+      }
+    },
+
+    // 拉取活跃玩家（3 分钟内有心跳）
+    async getActivePresences(): Promise<HideSeekPresence[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('hide_seek_presence').select()
+        const list = (data || []) as HideSeekPresence[]
+        const cutoff = Date.now() - 3 * 60 * 1000
+        return list.filter((p) => new Date(p.updated_at).getTime() > cutoff)
+      } catch (error) {
+        console.warn('Get hide-seek presences failed:', error)
+        return []
+      }
+    },
+
+    // 退出游戏时移除自己的位置
+    async removePresence(userKey: string): Promise<void> {
+      if (!useSupabase) return
+      try {
+        await supabase.from('hide_seek_presence').delete('user_key', userKey)
+      } catch (error) {
+        console.warn('Remove hide-seek presence failed:', error)
+      }
     },
   },
 

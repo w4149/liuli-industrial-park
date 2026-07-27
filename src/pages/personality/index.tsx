@@ -11,6 +11,7 @@ import './index.scss'
 const STORAGE_KEY = 'ridge_beast_result'
 const REWARDED_KEY = 'ridge_beast_rewarded'
 const IMMORTAL_REWARDED_KEY = 'ridge_beast_immortal_rewarded'
+const EARNED_BADGES_KEY = 'earned_badges'
 const CONFIDENCE_BLUR = 0.15 // 置信度低于此值时提示"介于两兽之间"
 
 const DIM_ORDER = ['V', 'J', 'R', 'C'] as const
@@ -37,12 +38,24 @@ const Personality: React.FC = () => {
   const grantRewards = async (result: RidgeBeastPersonality) => {
     const rewards: string[] = []
 
+    // 本地已获得徽章集（不依赖登录态，保证徽章展示正确）
+    const addEarnedBadge = (badgeId: string) => {
+      try {
+        const earned: string[] = Taro.getStorageSync(EARNED_BADGES_KEY) || []
+        if (!earned.includes(badgeId)) {
+          earned.push(badgeId)
+          Taro.setStorageSync(EARNED_BADGES_KEY, earned)
+        }
+      } catch { /* ignore */ }
+    }
+
     // 首测奖励：灵感值 + 识兽者徽章
     const rewarded = Taro.getStorageSync(REWARDED_KEY)
     if (!rewarded) {
       Taro.setStorageSync(REWARDED_KEY, '1')
       rewards.push(`灵感值 +${BEAST_TEST_INSPIRATION_REWARD}`)
       rewards.push('徽章「识兽者」')
+      addEarnedBadge(BEAST_TEST_BADGE_ID)
       if (user) {
         updateInspirationValue((user.inspiration_value || 0) + BEAST_TEST_INSPIRATION_REWARD)
         api.user.addInspiration(user.id, BEAST_TEST_INSPIRATION_REWARD)
@@ -54,6 +67,7 @@ const Personality: React.FC = () => {
     if (result.is_immortal && !Taro.getStorageSync(IMMORTAL_REWARDED_KEY)) {
       Taro.setStorageSync(IMMORTAL_REWARDED_KEY, '1')
       rewards.push(`隐藏徽章「${IMMORTAL_INFO.name}」`)
+      addEarnedBadge(IMMORTAL_INFO.badgeId)
       if (user) {
         api.achievement.awardBadge(user.id, IMMORTAL_INFO.badgeId)
       }
@@ -72,6 +86,8 @@ const Personality: React.FC = () => {
       api.user.savePersonality(user.id, result)
     }
     grantRewards(result)
+    // 通知地图把自身定位标记刷新为新脊兽图标
+    Taro.eventCenter.trigger('ridgeBeastUpdated')
   }
 
   const handleRetest = () => {

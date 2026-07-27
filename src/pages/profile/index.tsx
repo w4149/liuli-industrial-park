@@ -33,7 +33,26 @@ const Profile: React.FC = () => {
   const { user, badges, setBadges } = useUserStore()
   const [spatialProfile, setSpatialProfile] = useState<SpatialProfile>(mockSpatialProfile)
   const [personality, setPersonality] = useState<RidgeBeastPersonality | null>(null)
+  const [earnedBadgeIds, setEarnedBadgeIds] = useState<string[]>([])
   const [showDeveloperMode, setShowDeveloperMode] = useState(false)
+
+  // 本地已获得徽章集 + 用户档案徽章合并；初访者徽章默认解锁
+  const loadEarnedBadges = () => {
+    let earned: string[] = []
+    try {
+      earned = Taro.getStorageSync('earned_badges') || []
+    } catch { /* ignore */ }
+    // 历史兼容：测过脊兽但旧版未写入本地徽章集的用户，补发识兽者
+    try {
+      const result = Taro.getStorageSync('ridge_beast_result')
+      if (result && result.type && !earned.includes('badge-004')) {
+        earned.push('badge-004')
+        Taro.setStorageSync('earned_badges', earned)
+      }
+    } catch { /* ignore */ }
+    const merged = new Set<string>(['badge-001', ...earned, ...(user?.badges || [])])
+    setEarnedBadgeIds(Array.from(merged))
+  }
 
   // 从本地存档/用户档案读取脊兽人格测试结果
   const loadPersonality = () => {
@@ -49,6 +68,7 @@ const Profile: React.FC = () => {
 
   useDidShow(() => {
     loadPersonality()
+    loadEarnedBadges()
   })
 
   useEffect(() => {
@@ -67,6 +87,7 @@ const Profile: React.FC = () => {
 
     loadBadges()
     loadPersonality()
+    loadEarnedBadges()
 
     if (user && user.spatial_profile) {
       setSpatialProfile(user.spatial_profile)
@@ -75,6 +96,14 @@ const Profile: React.FC = () => {
 
   const goPersonality = () => {
     Taro.navigateTo({ url: '/pages/personality/index' })
+  }
+
+  const goHideSeek = () => {
+    Taro.navigateTo({ url: '/pages/hideSeek/index' })
+  }
+
+  const showWip = () => {
+    Taro.showToast({ title: '功能开发中，敬请期待', icon: 'none' })
   }
 
   const routePatternLabels: Record<string, string> = {
@@ -162,50 +191,65 @@ const Profile: React.FC = () => {
             <Text className="card-title">空间档案</Text>
             <View className="stats-grid">
               <View className="stat-item">
+                <Text className="stat-icon">⏳</Text>
                 <Text className="stat-value">{formatTime(spatialProfile.total_visit_duration)}</Text>
                 <Text className="stat-label">总停留时长</Text>
               </View>
               <View className="stat-item">
+                <Text className="stat-icon">🧭</Text>
                 <Text className="stat-value">{routePatternLabels[spatialProfile.route_pattern]}</Text>
                 <Text className="stat-label">探索风格</Text>
               </View>
               <View className="stat-item">
+                <Text className="stat-icon">💎</Text>
                 <Text className="stat-value">{spatialProfile.discovered_hidden_details}</Text>
                 <Text className="stat-label">发现宝藏</Text>
               </View>
               <View className="stat-item">
+                <Text className="stat-icon">💡</Text>
                 <Text className="stat-value">{spatialProfile.inspiration_adoptions}</Text>
                 <Text className="stat-label">灵感采纳</Text>
               </View>
             </View>
           </View>
 
-          <BadgeDisplay badges={badges} />
+          <BadgeDisplay badges={badges} earnedIds={earnedBadgeIds} />
 
           <View className="actions-card">
             <button className="action-item" onClick={goPersonality}>
               <span className="action-icon">🐉</span>
               <span className="action-label">脊兽人格测试</span>
+              <span className="action-arrow">›</span>
             </button>
-            <button className="action-item">
+            <button className="action-item" onClick={goHideSeek}>
+              <span className="action-icon">🙈</span>
+              <span className="action-label">脊兽躲猫猫</span>
+              <span className="action-arrow">›</span>
+            </button>
+            <button className="action-item" onClick={showWip}>
               <span className="action-icon">📊</span>
               <span className="action-label">生成空间报告</span>
+              <span className="action-arrow">›</span>
             </button>
-            <button className="action-item">
+            <button className="action-item" onClick={showWip}>
               <span className="action-icon">📝</span>
               <span className="action-label">隐私设置</span>
+              <span className="action-arrow">›</span>
             </button>
             <button className="action-item" onClick={() => Taro.navigateTo({ url: '/pages/bodyRecord/index' })}>
               <span className="action-icon">🎨</span>
               <span className="action-label">身体记录</span>
+              <span className="action-arrow">›</span>
             </button>
             <button className="action-item" onClick={() => Taro.navigateTo({ url: '/pages/bodyProfile/index' })}>
               <span className="action-icon">🧍</span>
               <span className="action-label">身体档案</span>
+              <span className="action-arrow">›</span>
             </button>
             <button className="action-item" onClick={() => setShowDeveloperMode(true)}>
               <span className="action-icon">🔧</span>
               <span className="action-label">开发者模式</span>
+              <span className="action-arrow">›</span>
             </button>
           </View>
       </>

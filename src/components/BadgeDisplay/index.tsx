@@ -4,9 +4,11 @@ import './index.scss'
 
 interface BadgeDisplayProps {
   badges: Badge[]
+  earnedIds?: string[]
 }
 
-const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badges }) => {
+const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badges, earnedIds }) => {
+  const earnedSet = new Set(earnedIds || [])
   const rarityColors: Record<string, string> = {
     common: '#999999',
     rare: '#4facfe',
@@ -19,24 +21,37 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badges }) => {
     legendary: '传说',
   }
 
+  const earnedCount = badges.filter((b) => earnedSet.has(b.id)).length
+
   return (
     <div className="badge-display">
-      <h2 className="display-title">我的徽章</h2>
+      <h2 className="display-title">我的徽章 <span className="badge-count">{earnedCount}/{badges.length}</span></h2>
       
       {badges.length === 0 ? (
         <p className="empty-message">还没有获得徽章，快去探索园区吧！</p>
       ) : (
         <div className="badges-grid">
-          {badges.map((badge) => (
-            <div key={badge.id} className="badge-item">
-              <div className="badge-icon" style={{ backgroundColor: rarityColors[badge.rarity] }}>
-                <span>🏅</span>
+          {badges.map((badge) => {
+            const earned = earnedSet.has(badge.id)
+            return (
+              <div key={badge.id} className={`badge-item ${earned ? 'earned' : 'locked'}`}>
+                <div
+                  className="badge-icon"
+                  style={{ backgroundColor: earned ? rarityColors[badge.rarity] : '#e0e0e0' }}
+                >
+                  <span>{earned ? (badge.pixel_image || '🏅') : '🔒'}</span>
+                </div>
+                <h3 className="badge-name">{badge.name}</h3>
+                <span
+                  className="badge-rarity"
+                  style={{ backgroundColor: earned ? rarityColors[badge.rarity] : '#bbb' }}
+                >
+                  {rarityLabels[badge.rarity]}
+                </span>
+                <p className="badge-description">{earned ? badge.description : '尚未解锁：' + badge.description}</p>
               </div>
-              <h3 className="badge-name">{badge.name}</h3>
-              <span className="badge-rarity">{rarityLabels[badge.rarity]}</span>
-              <p className="badge-description">{badge.description}</p>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

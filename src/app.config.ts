@@ -7,6 +7,7 @@ export default {
     'pages/shop/index',
     'pages/profile/index',
     'pages/personality/index',
+    'pages/hideSeek/index',
     'pages/colorLink/index',
     'pages/bodyRecord/index',
     'pages/bodyProfile/index',

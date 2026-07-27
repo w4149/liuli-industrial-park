@@ -95,6 +95,17 @@ export interface ShopItem {
   stock: number;
 }
 
+// 脊兽躲猫猫：玩家实时位置（GCJ02）
+export interface HideSeekPresence {
+  id: string;
+  user_key: string;
+  nickname: string;
+  beast_type: string; // RidgeBeastType 或空字符串（未测试）
+  lng: number;
+  lat: number;
+  updated_at: string;
+}
+
 export interface UserLocation {
   lat: number;
   lng: number;

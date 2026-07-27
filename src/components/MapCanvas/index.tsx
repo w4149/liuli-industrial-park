@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { POI } from '@/types'
+import { BEAST_PROFILES } from '@/data/ridgeBeasts'
 import { supabaseClient } from '@/utils/supabase/client'
 import { useUserStore } from '@/store/useUserStore'
 import marketAudioSrc from '@/assets/audio/danni-song.m4a'
@@ -105,8 +106,16 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     // 声音花园上传成功后刷新地图上的声音标记
     const refreshAudioMarkers = () => loadAudioMarkers()
     Taro.eventCenter.on('audioMarkersUpdated', refreshAudioMarkers)
+    // 完成脊兽测试后，把自身定位标记从红点换成脊兽小图标
+    const refreshUserMarkerIcon = () => {
+      if (userMarkerRef.current) {
+        userMarkerRef.current.setContent(getUserMarkerContent())
+      }
+    }
+    Taro.eventCenter.on('ridgeBeastUpdated', refreshUserMarkerIcon)
     return () => {
       Taro.eventCenter.off('audioMarkersUpdated', refreshAudioMarkers)
+      Taro.eventCenter.off('ridgeBeastUpdated', refreshUserMarkerIcon)
     }
   }, [])
 
@@ -624,6 +633,21 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
     }
   }, [customMapUrl, customMapBounds, mapLoaded])
 
+  // 自身定位标记内容：完成脊兽测试后显示对应脊兽小图标，否则显示红点
+  const getUserMarkerContent = () => {
+    try {
+      const saved = Taro.getStorageSync('ridge_beast_result')
+      if (saved && saved.type && BEAST_PROFILES[saved.type]) {
+        const profile = BEAST_PROFILES[saved.type]
+        const inner = profile.image
+          ? `<img src="${profile.image}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+          : `<span style="font-size:17px;line-height:1;">${profile.emoji}</span>`
+        return `<div style="width:32px;height:32px;border-radius:50%;background:${profile.glaze.gradient};display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.35);overflow:hidden;">${inner}</div>`
+      }
+    } catch { /* ignore */ }
+    return '<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>'
+  }
+
   const updateMarkerPosition = (lng: number, lat: number) => {
     if (userMarkerRef.current) {
       userMarkerRef.current.setPosition([lng, lat])
@@ -700,7 +724,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
         title: '我的位置',
         zIndex: 1000,
       })
-      userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
+      userMarker.setContent(getUserMarkerContent())
       mapRef.current.add(userMarker)
       userMarkerRef.current = userMarker
 
@@ -821,6 +845,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
   // 独立追踪 watcher 和 polling 的更新时间
   const lastWatcherUpdateRef = useRef<number>(0)
   const lastPollingUpdateRef = useRef<number>(0)
+  // watcher 本轮订阅的起始时间，用于主动续期
+  const watcherStartTimeRef = useRef<number>(0)
 
   // stopWatchers：只停止 watcher 相关，不动 polling
   const stopWatchers = () => {
@@ -864,6 +890,14 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       const watcherSilent = now - lastWatcherUpdateRef.current
       const pollingSilent = now - lastPollingUpdateRef.current
 
+      // 情况0：watcher 已连续订阅 >60s → 主动续期重订阅
+      // 移动端浏览器常在约 1-2 分钟后静默回收 GPS 会话（不报错但停止回调），
+      // 在被回收前抢先重订阅，保证定位持续可用
+      if (now - watcherStartTimeRef.current > 60000) {
+        console.log('🔄 定位会话续期：重订阅 watchPosition')
+        startNativeWatch()
+      }
+
       // 情况1：watcher 静默 >30s → 重启 watcher
       if (watcherSilent > 30000) {
         console.warn(`⚠️ Watcher 静默 ${Math.floor(watcherSilent / 1000)}s，重启`)
@@ -891,6 +925,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       navigator.geolocation.clearWatch(nativeWatchIdRef.current)
     }
 
+    watcherStartTimeRef.current = Date.now()
     nativeWatchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
         watchFailedRef.current = false
@@ -900,7 +935,17 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
       },
       (error) => {
         console.warn(`Native watch error:`, error.code, error.message)
-        // 不主动清除 — 心跳检测会处理
+        // 权限拒绝(code 1)不重试；GPS 不可用/超时则立即重订阅，
+        // 避免定位会话被浏览器回收后长期静默（timeout 20s 限流，不会形成紧循环）
+        if (error.code !== 1) {
+          if (nativeWatchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(nativeWatchIdRef.current)
+            nativeWatchIdRef.current = null
+          }
+          window.setTimeout(() => {
+            if (nativeWatchIdRef.current === null) startNativeWatch()
+          }, 1000)
+        }
       },
       {
         enableHighAccuracy: true,
@@ -933,7 +978,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
           },
           () => { /* 静默失败 */ },
           {
-            enableHighAccuracy: false,
+            // 高精度模式：保持手机 GPS 引擎活跃（状态栏定位图标常亮），
+            // 低精度网络定位会让系统在 watcher 被回收后彻底放掉 GPS 会话
+            enableHighAccuracy: true,
             timeout: 10000,
             maximumAge: 3000,
           }
@@ -1089,7 +1136,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({ pois, onPOIClick, onAudioPointsCh
         title: '我的位置',
         zIndex: 1000,
       })
-      userMarker.setContent('<div style="width:24px;height:24px;border-radius:50%;background:#ff6464;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);"><div style="width:8px;height:8px;border-radius:50%;background:#fff;"></div></div>')
+      userMarker.setContent(getUserMarkerContent())
       map.add(userMarker)
       userMarkerRef.current = userMarker
     }

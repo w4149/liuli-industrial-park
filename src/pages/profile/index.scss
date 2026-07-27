@@ -30,11 +30,11 @@
 }
 
 .user-card {
-  background: hsl(var(--card));
-  border: 1PX solid hsl(var(--border));
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.82) 100%);
+  border: none;
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 20px;
+  box-shadow: 0 8px 24px hsl(var(--primary) / 0.28);
+  padding: 22px 20px;
   margin: 16px 20px;
   display: flex;
   align-items: center;
@@ -46,7 +46,8 @@
   height: 72px;
   border-radius: 50%;
   overflow: hidden;
-  border: 2PX solid hsl(var(--primary));
+  border: 3PX solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .avatar {
@@ -61,18 +62,19 @@
 .user-name {
   font-size: 18px;
   font-weight: 600;
-  color: hsl(var(--foreground));
+  color: hsl(var(--primary-foreground));
   display: block;
   margin-bottom: 4px;
 }
 
 .user-id {
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--primary-foreground) / 0.75);
 }
 
 .inspiration-display {
-  background: hsl(var(--primary));
+  background: rgba(255, 255, 255, 0.2);
+  border: 1PX solid rgba(255, 255, 255, 0.35);
   border-radius: var(--radius-full);
   padding: 12px 20px;
   display: flex;
@@ -233,6 +235,12 @@
   padding: 16px;
 }
 
+.stat-icon {
+  font-size: 20px;
+  display: block;
+  margin-bottom: 6px;
+}
+
 .stat-value {
   font-size: 18px;
   font-weight: 600;
@@ -278,6 +286,13 @@
   font-size: 16px;
   color: hsl(var(--foreground));
   text-align: left;
+  flex: 1;
+}
+
+.action-arrow {
+  font-size: 20px;
+  color: hsl(var(--muted-foreground) / 0.6);
+  line-height: 1;
 }
 
 .action-item:active {
