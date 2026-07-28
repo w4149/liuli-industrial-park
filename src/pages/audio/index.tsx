@@ -336,13 +336,61 @@ const AudioGarden: React.FC = () => {
   }
 
   // 选择当前浏览器支持且跨端兼容性最好的录音格式：
-  // audio/mp4(AAC) 各端都能播放；webm/opus 在 iOS Safari 上无法解码
+  // 只认显式 AAC 的 mp4（Safari 支持）——安卓 Chrome 的 audio/mp4 实际是
+  // Opus 编码装进 mp4 容器，iOS 依然无法解码，不能用通用 'audio/mp4' 探测
   const pickRecordMimeType = (): string => {
-    const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
+    const candidates = ['audio/mp4;codecs=mp4a.40.2', 'audio/webm;codecs=opus', 'audio/webm']
     for (const t of candidates) {
       if (window.MediaRecorder?.isTypeSupported?.(t)) return t
     }
     return ''
+  }
+
+  // 把录音 Blob 转码为 16-bit PCM 单声道 WAV（22.05kHz）：
+  // 安卓录出的 webm/ogg/opus 苹果播不了，WAV 全平台可解码（60s 约 2.6MB）
+  const transcodeToWav = async (blob: Blob): Promise<Blob> => {
+    const AC = window.AudioContext || (window as any).webkitAudioContext
+    const ac = new AC()
+    let decoded: AudioBuffer
+    try {
+      decoded = await ac.decodeAudioData(await blob.arrayBuffer())
+    } finally {
+      ac.close()
+    }
+    const rate = 22050
+    const length = Math.max(1, Math.ceil(decoded.duration * rate))
+    const offline = new OfflineAudioContext(1, length, rate)
+    const src = offline.createBufferSource()
+    src.buffer = decoded
+    src.connect(offline.destination)
+    src.start()
+    const rendered = await offline.startRendering()
+    const samples = rendered.getChannelData(0)
+
+    // 写 WAV 文件头 + PCM 数据
+    const buffer = new ArrayBuffer(44 + samples.length * 2)
+    const view = new DataView(buffer)
+    const writeStr = (offset: number, s: string) => {
+      for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i))
+    }
+    writeStr(0, 'RIFF')
+    view.setUint32(4, 36 + samples.length * 2, true)
+    writeStr(8, 'WAVE')
+    writeStr(12, 'fmt ')
+    view.setUint32(16, 16, true)
+    view.setUint16(20, 1, true) // PCM
+    view.setUint16(22, 1, true) // 单声道
+    view.setUint32(24, rate, true)
+    view.setUint32(28, rate * 2, true)
+    view.setUint16(32, 2, true)
+    view.setUint16(34, 16, true)
+    writeStr(36, 'data')
+    view.setUint32(40, samples.length * 2, true)
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]))
+      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+    }
+    return new Blob([buffer], { type: 'audio/wav' })
   }
 
   const startRecording = async () => {
@@ -505,18 +553,31 @@ const AudioGarden: React.FC = () => {
     }
     setUploading(true)
     try {
+      // Opus 系格式（webm/ogg，含安卓 Chrome 的 mp4+opus）苹果无法解码，上传前转码为 WAV
+      let uploadBlob: Blob = pendingBlob
+      let type = pendingBlob.type || ''
+      const needsTranscode =
+        type.includes('webm') || type.includes('ogg') || type.includes('opus')
+      if (needsTranscode) {
+        try {
+          uploadBlob = await transcodeToWav(pendingBlob)
+          type = uploadBlob.type
+        } catch (e) {
+          // 转码失败时退回原始格式上传（至少同端可播）
+          console.warn('转码 WAV 失败，按原始格式上传:', e)
+        }
+      }
       // 按实际格式生成扩展名（避免出现 .audio 这种无意义扩展名）
-      const type = pendingBlob.type || ''
-      const ext = type.includes('mp4') ? 'm4a'
+      const ext = type.includes('wav') ? 'wav'
+        : type.includes('mp4') ? 'm4a'
         : type.includes('webm') ? 'webm'
         : type.includes('mpeg') ? 'mp3'
         : type.includes('ogg') ? 'ogg'
-        : type.includes('wav') ? 'wav'
         : 'm4a'
       const fileName = `${Date.now()}-${Math.round(Math.random() * 1000)}.${ext}`
-      const file = pendingBlob instanceof File
-        ? pendingBlob
-        : new File([pendingBlob], fileName, { type: pendingBlob.type })
+      const file = uploadBlob instanceof File
+        ? uploadBlob
+        : new File([uploadBlob], fileName, { type })
       const audioUrl = await api.audio.uploadAudio(file, fileName)
       await api.audio.createMarker({
         user_id: user?.id || 'guest',
