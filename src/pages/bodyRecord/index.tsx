@@ -5,6 +5,7 @@ import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
 import { BODY_WORDS, BODY_PARTS, ColorWordLink } from '@/types'
 import { BODY_SILHOUETTE, detectBodyPart, getPartLabel } from '@/config/bodyParts'
+import IntroOverlay from '@/components/IntroOverlay'
 import './index.scss'
 
 // ─── 类型 ────────────────────────────────────────
@@ -17,6 +18,25 @@ interface BrushStroke {
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
+
+// 特定部位小故事的进场式动画文案（保存成功后播放，之后再进入庆祝动画）
+const HAND_STORY_LINES = [
+  '小时候练兰花指',
+  '老师说我的手像“鸡爪”，',
+  '拿棍子敲手的骨头，',
+  '直到大家都成为',
+  '一模一样的“花”。',
+]
+const KNEE_STORY_LINES = [
+  '练习压膝盖很像荡秋千，',
+  '一个人将双手交握在',
+  '另一个人的膝盖上，',
+  '双脚离开地。',
+  '荡秋千的时候挺快乐的，',
+  '当我成为秋千就不一样了。',
+]
+const HAND_PARTS = ['leftHand', 'rightHand']
+const KNEE_PARTS = ['leftKnee', 'rightKnee']
 
 // Fisher-Yates 洗牌
 const shuffle = <T,>(arr: T[]): T[] => {
@@ -142,10 +162,19 @@ const BodyRecord: React.FC = () => {
   const [shuffledWords] = useState(() => shuffle(BODY_WORDS))
   // 保存成功后的像素风吹蜡烛庆祝动画
   const [showCelebrate, setShowCelebrate] = useState(false)
+  // 手/膝盖小故事的特殊文案动画（播完再进庆祝动画）
+  const [storyIntroLines, setStoryIntroLines] = useState<string[] | null>(null)
   const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => {
     if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
   }, [])
+
+  // 吹蜡烛庆祝动画，约 4.2s 后自动关闭
+  const startCelebrate = () => {
+    setShowCelebrate(true)
+    if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
+    celebrateTimerRef.current = setTimeout(() => setShowCelebrate(false), 4200)
+  }
 
   const hostRef = useRef<HTMLDivElement>(null) // Taro View 包裹层
   const svgContainerRef = useRef<HTMLDivElement | null>(null) // 原生 SVG 容器（挂在 document.body 上）
@@ -464,14 +493,21 @@ const BodyRecord: React.FC = () => {
         })
       }
       Taro.showToast({ title: '已保存', icon: 'success' })
+      // 小故事写的是手/膝盖时，先播对应文案动画，播完再进庆祝动画
+      let specialLines: string[] | null = null
+      if (storyText.trim()) {
+        if (HAND_PARTS.includes(storyPart)) specialLines = HAND_STORY_LINES
+        else if (KNEE_PARTS.includes(storyPart)) specialLines = KNEE_STORY_LINES
+      }
       setShowStory(false)
       setStoryText('')
       setStrokes([])
       redrawStrokes([])
-      // 吹蜡烛庆祝动画，约 4.2s 后自动关闭
-      setShowCelebrate(true)
-      if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
-      celebrateTimerRef.current = setTimeout(() => setShowCelebrate(false), 4200)
+      if (specialLines) {
+        setStoryIntroLines(specialLines)
+      } else {
+        startCelebrate()
+      }
     } catch (err) {
       console.warn('提交失败:', err)
       Taro.showToast({ title: '提交失败', icon: 'none' })
@@ -571,6 +607,17 @@ const BodyRecord: React.FC = () => {
             </View>
           </View>
         </View>
+      )}
+
+      {/* 手/膝盖小故事的特殊文案动画（受控，关闭后进入庆祝动画） */}
+      {storyIntroLines && (
+        <IntroOverlay
+          lines={storyIntroLines}
+          onClose={() => {
+            setStoryIntroLines(null)
+            startCelebrate()
+          }}
+        />
       )}
 
       {/* 保存成功：像素风吹蜡烛 + 心愿飞天 */}
