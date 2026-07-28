@@ -283,6 +283,8 @@ const Pigeon: React.FC = () => {
         <View className='pg-letter-mask' onClick={() => setSelectedLetter(null)}>
           <View className='pg-letter' onClick={(e) => e.stopPropagation()}>
             <View className='pg-letter-paper'>
+              {/* 邮票占位：浮动在右上角，让抬头/正文文字自动绕开邮票不被遮挡 */}
+              {selectedLetter.stamp_url ? <View className='pg-letter-stamp-space' /> : null}
               <Text className='pg-letter-to'>亲爱的 {selectedLetter.receiver_name}：</Text>
               <Text className='pg-letter-content'>{selectedLetter.content}</Text>
               <Text className='pg-letter-from'>—— {selectedLetter.sender_name}</Text>

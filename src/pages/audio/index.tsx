@@ -231,8 +231,13 @@ const AudioGarden: React.FC = () => {
   const bubbles = bubblesRef.current
 
   const playAudio = (url: string, name: string) => {
-    if (audioElRef.current) {
-      audioElRef.current.pause()
+    const old = audioElRef.current
+    if (old) {
+      // 停掉旧实例并解绑回调，避免旧实例的事件继续更新界面
+      old.pause()
+      old.ontimeupdate = null
+      old.onended = null
+      old.onerror = null
     }
     const audio = new Audio(url)
     audioElRef.current = audio
@@ -245,6 +250,13 @@ const AudioGarden: React.FC = () => {
     audio.onended = () => {
       setPlayingName(null)
       setProgress(0)
+    }
+    // 加载/解码失败（网络错误、格式不兼容如 iOS 无法解码 webm）
+    audio.onerror = () => {
+      if (audioElRef.current !== audio) return
+      setPlayingName(null)
+      setProgress(0)
+      Taro.showToast({ title: '音频加载失败，可能是格式不兼容', icon: 'none' })
     }
     audio.play().catch(err => {
       console.warn('播放失败:', err)
@@ -266,7 +278,10 @@ const AudioGarden: React.FC = () => {
     const audio = audioElRef.current
     if (!audio) return
     if (isPaused) {
-      audio.play()
+      audio.play().catch(err => {
+        console.warn('恢复播放失败:', err)
+        Taro.showToast({ title: '播放失败', icon: 'none' })
+      })
       setIsPaused(false)
     } else {
       audio.pause()
@@ -320,6 +335,16 @@ const AudioGarden: React.FC = () => {
     return { supported: true }
   }
 
+  // 选择当前浏览器支持且跨端兼容性最好的录音格式：
+  // audio/mp4(AAC) 各端都能播放；webm/opus 在 iOS Safari 上无法解码
+  const pickRecordMimeType = (): string => {
+    const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
+    for (const t of candidates) {
+      if (window.MediaRecorder?.isTypeSupported?.(t)) return t
+    }
+    return ''
+  }
+
   const startRecording = async () => {
     // 兼容性预检
     const check = checkRecordingSupport()
@@ -330,13 +355,16 @@ const AudioGarden: React.FC = () => {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
+      const mimeType = pickRecordMimeType()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       recordChunksRef.current = []
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) recordChunksRef.current.push(e.data)
       }
       recorder.onstop = () => {
-        const blob = new Blob(recordChunksRef.current, { type: 'audio/webm' })
+        // 必须用实际录制格式打标：硬编码 webm 会把 Safari 录的 mp4 标错，导致跨端播放失败
+        const type = recorder.mimeType || mimeType || 'audio/webm'
+        const blob = new Blob(recordChunksRef.current, { type })
         setPendingBlob(blob)
         stream.getTracks().forEach(t => t.stop())
       }
@@ -477,7 +505,14 @@ const AudioGarden: React.FC = () => {
     }
     setUploading(true)
     try {
-      const ext = pendingBlob.type.includes('webm') ? 'webm' : 'audio'
+      // 按实际格式生成扩展名（避免出现 .audio 这种无意义扩展名）
+      const type = pendingBlob.type || ''
+      const ext = type.includes('mp4') ? 'm4a'
+        : type.includes('webm') ? 'webm'
+        : type.includes('mpeg') ? 'mp3'
+        : type.includes('ogg') ? 'ogg'
+        : type.includes('wav') ? 'wav'
+        : 'm4a'
       const fileName = `${Date.now()}-${Math.round(Math.random() * 1000)}.${ext}`
       const file = pendingBlob instanceof File
         ? pendingBlob

@@ -195,6 +195,15 @@
       margin-top: 32px;
     }
 
+    // 邮票占位（与 .pg-letter-stamp 尺寸对应，含旋转/边框外扩），
+    // 浮动让后续文字的行盒自动绕开右上角邮票区域
+    .pg-letter-stamp-space {
+      display: block;
+      float: right;
+      width: 170px;
+      height: 160px;
+    }
+
     .pg-letter-stamp {
       position: absolute;
       top: 20px;
