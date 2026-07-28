@@ -29,10 +29,14 @@ const shuffle = <T,>(arr: T[]): T[] => {
 }
 
 // 屏幕坐标 → SVG viewBox 坐标
-const toSvg = (cx: number, cy: number, r: DOMRect) => ({
-  x: ((cx - r.left) / r.width) * 200,
-  y: ((cy - r.top) / r.height) * 420,
-})
+// preserveAspectRatio 默认 xMidYMid meet：按短边缩放并居中，需修正 letterbox 偏移
+const toSvg = (cx: number, cy: number, r: DOMRect) => {
+  const s = Math.min(r.width / 200, r.height / 420)
+  return {
+    x: (cx - r.left - (r.width - 200 * s) / 2) / s,
+    y: (cy - r.top - (r.height - 420 * s) / 2) / s,
+  }
+}
 
 // 向 SVG group 中直接添加笔触圆点（DOM 操作，不走 React）
 function addDotToSvg(group: SVGGElement, x: number, y: number, color: string, pressure: number) {
@@ -202,44 +206,29 @@ const BodyRecord: React.FC = () => {
         if (n.parentNode) n.parentNode.removeChild(n)
       })
 
-      // 创建原生 div 容器 — append 到 document.body，完全脱离 Taro 渲染树
+      // 创建原生 div 容器 — 直接挂进 host 元素内部 absolute 定位，
+      // 随文档流自动对齐（fixed + 手动同步在手机端转场/URL栏伸缩时会错位）
       const container = document.createElement('div')
       container.className = 'br-svg-canvas-inner'
-      container.style.position = 'fixed'
+      container.style.position = 'absolute'
+      container.style.inset = '0'
       container.style.zIndex = '50'
       container.style.touchAction = 'none'
       container.style.userSelect = 'none'
       container.style.cursor = 'crosshair'
 
-      // 根据 host 元素的位置计算 container 的 fixed 定位
-      const updatePosition = () => {
-        const rect = hostEl.getBoundingClientRect()
-        container.style.top = rect.top + 'px'
-        container.style.left = rect.left + 'px'
-        container.style.width = rect.width + 'px'
-        container.style.height = rect.height + 'px'
-        // 布局变了就清掉缓存的 svg rect
-        svgRectRef.current = null
-      }
-      updatePosition()
-
       // 用 createElementNS 创建 SVG（确保正确命名空间，兼容移动端）
       const { svg, group } = createBodySvg()
       container.appendChild(svg)
-      document.body.appendChild(container)
+      hostEl.appendChild(container)
 
       svgElRef.current = svg
       strokeGroupRef.current = group
       svgContainerRef.current = container
 
-      console.log('[bodyRecord] SVG mounted on document.body, fixed position set')
+      console.log('[bodyRecord] SVG mounted inside #br-svg-host')
 
-      // 延迟一帧确保布局完成
-      requestAnimationFrame(() => {
-        svgRectRef.current = svg.getBoundingClientRect()
-        console.log('[bodyRecord] SVG ready, rect:', svgRectRef.current.width, 'x', svgRectRef.current.height)
-      })
-
+      // 每次落笔时取最新 rect（绘制期间 touchAction:none 不会滚动，笔画内可复用）
       const getRect = (): DOMRect | null => {
         if (!svgRectRef.current || svgRectRef.current.width === 0) {
           svgRectRef.current = svg.getBoundingClientRect()
@@ -255,6 +244,8 @@ const BodyRecord: React.FC = () => {
           Taro.showToast({ title: '请先选择一个感受词', icon: 'none' })
           return
         }
+        // 每次落笔重新取 rect（标签区出现等布局变化不触发 resize/scroll）
+        svgRectRef.current = svg.getBoundingClientRect()
         const rect = getRect()
         if (!rect) return
         isDrawing.current = true
@@ -331,9 +322,9 @@ const BodyRecord: React.FC = () => {
       container.addEventListener('touchmove', onMove, { passive: false })
       container.addEventListener('touchend', onUp)
 
-      // resize / scroll 监听 — 同步更新 fixed 容器位置
+      // resize / scroll 后缓存的 rect 失效，下次落笔时重新获取
       const onLayoutChange = () => {
-        updatePosition()
+        svgRectRef.current = null
       }
       window.addEventListener('resize', onLayoutChange)
       window.addEventListener('scroll', onLayoutChange, true) // capture 阶段，捕获所有滚动
