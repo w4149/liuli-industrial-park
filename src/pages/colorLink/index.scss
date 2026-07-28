@@ -47,60 +47,45 @@
   }
 
   .cl-wheel {
+    display: block;
     width: 320px;
     height: 320px;
     border-radius: 50%;
-    background: conic-gradient(
-      hsl(0, 100%, 50%),
-      hsl(30, 100%, 50%),
-      hsl(60, 100%, 50%),
-      hsl(90, 100%, 50%),
-      hsl(120, 100%, 50%),
-      hsl(150, 100%, 50%),
-      hsl(180, 100%, 50%),
-      hsl(210, 100%, 50%),
-      hsl(240, 100%, 50%),
-      hsl(270, 100%, 50%),
-      hsl(300, 100%, 50%),
-      hsl(330, 100%, 50%),
-      hsl(360, 100%, 50%)
-    );
+    // 真色轮：角度=色相（conic），中心→边缘=饱和度（radial 白心渐变）
+    background:
+      radial-gradient(circle closest-side, #fff 0%, rgba(255, 255, 255, 0) 100%),
+      conic-gradient(
+        hsl(0, 100%, 50%),
+        hsl(30, 100%, 50%),
+        hsl(60, 100%, 50%),
+        hsl(90, 100%, 50%),
+        hsl(120, 100%, 50%),
+        hsl(150, 100%, 50%),
+        hsl(180, 100%, 50%),
+        hsl(210, 100%, 50%),
+        hsl(240, 100%, 50%),
+        hsl(270, 100%, 50%),
+        hsl(300, 100%, 50%),
+        hsl(330, 100%, 50%),
+        hsl(360, 100%, 50%)
+      );
     cursor: crosshair;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     position: relative;
-
-    // 中心白色区域（放取色器）
-    &::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      background: #fff;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    }
+    // 拖动取色时禁止页面滚动
+    touch-action: none;
   }
 
-  .cl-picker-wrapper {
+  // 取色标记：跟随触点，显示当前颜色
+  .cl-wheel-marker {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 2;
-    width: 60px;
-    height: 60px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    overflow: hidden;
-
-    .cl-picker {
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
-    }
+    border: 3px solid #fff;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
   }
 
   .cl-current-color {

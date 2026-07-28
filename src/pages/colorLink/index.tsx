@@ -1,10 +1,20 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Taro from '@tarojs/taro'
 import { View, Text } from '@tarojs/components'
 import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
 import { BODY_WORDS, BodyWord, ColorWordLink } from '@/types'
 import './index.scss'
+
+// HSV → hex（色轮取色：h 色相角度，s 饱和度 0-1，v 明度 0-1）
+const hsvToHex = (h: number, s: number, v: number): string => {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6
+    const c = v - v * s * Math.max(0, Math.min(k, 4 - k, 1))
+    return Math.round(c * 255).toString(16).padStart(2, '0')
+  }
+  return `#${f(5)}${f(3)}${f(1)}`
+}
 
 const ColorLink: React.FC = () => {
   const { user } = useUserStore()
@@ -14,28 +24,77 @@ const ColorLink: React.FC = () => {
   const [activeWord, setActiveWord] = useState<BodyWord | null>(null)
   // 当前从色轮选取的颜色
   const [currentHex, setCurrentHex] = useState('#e2574c')
+  // 色轮上的取色标记位置（相对色轮左上角，px）
+  const [markerPos, setMarkerPos] = useState<{ x: number; y: number } | null>(null)
   const [saving, setSaving] = useState(false)
-  const pickerRef = useRef<HTMLInputElement>(null)
+  const activeWordRef = useRef<BodyWord | null>(null)
+  activeWordRef.current = activeWord
 
   const allDone = BODY_WORDS.every((w) => !!wordColors[w])
 
-  // 点击色轮 → 触发隐藏的颜色选择器
-  const handleWheelClick = () => {
-    if (!activeWord) {
-      Taro.showToast({ title: '请先点击下方的词语', icon: 'none' })
-      return
-    }
-    pickerRef.current?.click()
-  }
+  // 真色轮取色：按下/拖动时根据触点位置计算颜色（角度=色相，半径=饱和度）
+  useEffect(() => {
+    let tries = 0
+    let removeListeners: (() => void) | null = null
 
-  // 颜色选择器变化
-  const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const hex = e.target.value
-    setCurrentHex(hex)
-    if (activeWord) {
-      setWordColors((prev) => ({ ...prev, [activeWord]: hex }))
+    const bind = () => {
+      const el = document.getElementById('cl-wheel')
+      if (!el) {
+        // Taro H5 元素挂载有延迟，重试获取
+        if (++tries < 10) setTimeout(bind, 100)
+        return
+      }
+
+      let dragging = false
+
+      const pick = (clientX: number, clientY: number, isDown: boolean) => {
+        if (!activeWordRef.current) {
+          if (isDown) Taro.showToast({ title: '请先点击下方的词语', icon: 'none' })
+          return
+        }
+        const rect = el.getBoundingClientRect()
+        const R = rect.width / 2
+        const dx = clientX - rect.left - R
+        const dy = clientY - rect.top - R
+        const r = Math.sqrt(dx * dx + dy * dy)
+        if (r > R) return // 圆外不取色
+        // conic-gradient 从正上方顺时针，与 atan2(dx, -dy) 一致
+        const hue = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360
+        const sat = Math.min(1, r / R)
+        const hex = hsvToHex(hue, sat, 1)
+        setCurrentHex(hex)
+        setMarkerPos({ x: clientX - rect.left, y: clientY - rect.top })
+        const word = activeWordRef.current
+        setWordColors((prev) => ({ ...prev, [word]: hex }))
+      }
+
+      const onDown = (ev: PointerEvent) => {
+        dragging = true
+        el.setPointerCapture?.(ev.pointerId)
+        pick(ev.clientX, ev.clientY, true)
+      }
+      const onMove = (ev: PointerEvent) => {
+        if (!dragging) return
+        ev.preventDefault()
+        pick(ev.clientX, ev.clientY, false)
+      }
+      const onUp = () => { dragging = false }
+
+      el.addEventListener('pointerdown', onDown)
+      el.addEventListener('pointermove', onMove)
+      el.addEventListener('pointerup', onUp)
+      el.addEventListener('pointercancel', onUp)
+      removeListeners = () => {
+        el.removeEventListener('pointerdown', onDown)
+        el.removeEventListener('pointermove', onMove)
+        el.removeEventListener('pointerup', onUp)
+        el.removeEventListener('pointercancel', onUp)
+      }
     }
-  }
+
+    bind()
+    return () => removeListeners?.()
+  }, [])
 
   // 点击词语
   const handleWordClick = (word: BodyWord) => {
@@ -46,6 +105,7 @@ const ColorLink: React.FC = () => {
   const handleReset = () => {
     setWordColors({})
     setActiveWord(null)
+    setMarkerPos(null)
   }
 
   // 保存
@@ -91,23 +151,25 @@ const ColorLink: React.FC = () => {
         为每个感受词在色轮上选一种颜色
       </Text>
 
-      {/* 色轮 */}
+      {/* 色轮：点击/拖动直接取色 */}
       <View className='cl-wheel-section'>
         <View className='cl-wheel-wrapper'>
-          <View className='cl-wheel' onClick={handleWheelClick} />
-          <View className='cl-picker-wrapper'>
-            <input
-              ref={pickerRef}
-              className='cl-picker'
-              type='color'
-              value={currentHex}
-              onChange={handleColorChange}
-            />
+          <View className='cl-wheel' id='cl-wheel'>
+            {markerPos && (
+              <View
+                className='cl-wheel-marker'
+                style={{
+                  left: `${markerPos.x}px`,
+                  top: `${markerPos.y}px`,
+                  background: currentHex,
+                }}
+              />
+            )}
           </View>
         </View>
         {activeWord && (
           <Text className='cl-active-hint'>
-            点击色轮为「{activeWord}」选色
+            在色轮上点击或拖动，为「{activeWord}」选色
           </Text>
         )}
         <Text className='cl-current-color'>
