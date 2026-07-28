@@ -50,7 +50,7 @@ const gaussRand = (rng: () => number) => {
 const scatterDotsForPart = (
   partKey: string,
   hexCounts: Record<string, number>,
-  link: ColorWordLink,
+  links: ColorWordLink[],
   isSelected: boolean,
 ): string => {
   const zone = BODY_ZONES.find((z) => z.key === partKey)
@@ -66,7 +66,7 @@ const scatterDotsForPart = (
 
   let html = ''
   for (const [hex, count] of Object.entries(hexCounts)) {
-    const word = hexToWord(hex, link)
+    const word = hexToWord(hex, links)
     const { r, g, b } = hexToRgb(hex)
     const numDots = Math.max(6, count * 10)
     for (let i = 0; i < numDots; i++) {
@@ -86,9 +86,13 @@ const scatterDotsForPart = (
   return html
 }
 
-const hexToWord = (hex: string, link: ColorWordLink): string => {
-  for (const w of BODY_WORDS) {
-    if ((link as any)[`word_${w}`] === hex) return w
+// 遍历全部历史色板（新→旧）反查 hex 对应的词：换过色板后旧记录的 hex
+// 只存在于旧 link 中，只用最新 link 会导致旧数据匹配不到而丢失
+const hexToWord = (hex: string, links: ColorWordLink[]): string => {
+  for (const link of links) {
+    for (const w of BODY_WORDS) {
+      if ((link as any)[`word_${w}`] === hex) return w
+    }
   }
   return ''
 }
@@ -96,6 +100,7 @@ const hexToWord = (hex: string, link: ColorWordLink): string => {
 const BodyProfile: React.FC = () => {
   const { user } = useUserStore()
   const [link, setLink] = useState<ColorWordLink | null>(null)
+  const [links, setLinks] = useState<ColorWordLink[]>([])
   const [records, setRecords] = useState<BodyRecord[]>([])
   const [stories, setStories] = useState<BodyStory[]>([])
   const [loading, setLoading] = useState(true)
@@ -111,8 +116,9 @@ const BodyProfile: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const [l, recs, strs] = await Promise.all([
+      const [l, ls, recs, strs] = await Promise.all([
         api.colorWord.getLatest(userId),
+        api.colorWord.getAll(userId),
         api.bodyRecord.getAll(userId),
         api.bodyStory.getAll(userId),
       ])
@@ -122,6 +128,7 @@ const BodyProfile: React.FC = () => {
         return
       }
       setLink(l)
+      setLinks(ls)
       setRecords(recs)
       setStories(strs)
       setLoading(false)
@@ -137,9 +144,11 @@ const BodyProfile: React.FC = () => {
       return
     }
     Promise.all([
+      api.colorWord.getAll(userId),
       api.bodyRecord.getAll(userId),
       api.bodyStory.getAll(userId),
-    ]).then(([recs, strs]) => {
+    ]).then(([ls, recs, strs]) => {
+      setLinks(ls)
       setRecords(recs)
       setStories(strs)
     })
@@ -164,7 +173,7 @@ const BodyProfile: React.FC = () => {
     for (const z of BODY_ZONES) {
       const counts = partHexCounts[z.key]
       if (counts && Object.keys(counts).length > 0) {
-        dotsHtml += scatterDotsForPart(z.key, counts, link!, selectedPart === z.key)
+        dotsHtml += scatterDotsForPart(z.key, counts, links, selectedPart === z.key)
       }
     }
     return `<svg viewBox="0 0 200 420" xmlns="http://www.w3.org/2000/svg">
@@ -173,7 +182,7 @@ const BodyProfile: React.FC = () => {
   <g clip-path="url(#profile-clip)">${dotsHtml}</g>
   <path d="${BODY_SILHOUETTE}" fill="none" stroke="#8a8578" stroke-width="1.5" pointer-events="none" />
 </svg>`
-  }, [partHexCounts, link, selectedPart])
+  }, [partHexCounts, links, selectedPart])
 
   // SVG 点击事件
   const handleSvgClick = useCallback((e: any) => {
@@ -249,7 +258,7 @@ const BodyProfile: React.FC = () => {
 
     const wordCounts: Record<string, { count: number; hex: string }> = {}
     for (const [hex, count] of Object.entries(hexCounts)) {
-      const word = hexToWord(hex, link)
+      const word = hexToWord(hex, links)
       if (word) {
         if (!wordCounts[word]) wordCounts[word] = { count: 0, hex }
         wordCounts[word].count += count
@@ -263,7 +272,7 @@ const BodyProfile: React.FC = () => {
       const pct = total > 0 ? count / total : 0
       return { word: w, hex, count, pct }
     }).filter((d) => d.count > 0)
-  }, [selectedPart, partHexCounts, link])
+  }, [selectedPart, partHexCounts, link, links])
 
   const handleBarClick = async (word: string) => {
     if (!selectedPart) return

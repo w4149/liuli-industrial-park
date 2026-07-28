@@ -584,6 +584,21 @@ export const api = {
       }
     },
 
+    // 获取用户全部历史选色结果（按时间倒序，用于档案页匹配旧色板的颜色）
+    async getAll(userId: string): Promise<ColorWordLink[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('color_word_links').eq('user_id', userId)
+        const list = (data || []) as ColorWordLink[]
+        return list.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      } catch (error) {
+        console.error('Get all color word links failed:', error)
+        return []
+      }
+    },
+
     // 保存新的选色结果
     async save(link: Omit<ColorWordLink, 'id' | 'created_at'>): Promise<ColorWordLink> {
       const newLink = { ...link, created_at: new Date().toISOString() }

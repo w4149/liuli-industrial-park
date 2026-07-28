@@ -226,18 +226,20 @@ const BodyRecord: React.FC = () => {
     const tryCreateSvg = (retries = 0) => {
       // 已取消或已创建（防止多条重试链并发导致重复创建容器）
       if (cancelled || svgElRef.current) return
-      const hostEl = document.getElementById('br-svg-host')
+      // 必须用 ref 取当前页面实例的 host：redirectTo/navigateTo 后 DOM 中可能
+      // 同时存在多个历史页面实例（同 id），getElementById 会命中旧实例导致画布挂错页面
+      const hostEl = hostRef.current as unknown as HTMLElement | null
       if (!hostEl) {
         if (retries < 10) {
           retryTimer = setTimeout(() => tryCreateSvg(retries + 1), 100)
         } else {
-          console.warn('[bodyRecord] #br-svg-host not found after 10 retries')
+          console.warn('[bodyRecord] svg host ref not ready after 10 retries')
         }
         return
       }
 
-      // 防御：移除历史遗留的孤儿容器（重试链竞争可能产生的重复容器）
-      document.querySelectorAll('.br-svg-canvas-inner').forEach((n) => {
+      // 防御：仅清理当前 host 内遗留的重复容器（不可全局清理，会误删页面栈中旧实例的画布）
+      hostEl.querySelectorAll('.br-svg-canvas-inner').forEach((n) => {
         if (n.parentNode) n.parentNode.removeChild(n)
       })
 
