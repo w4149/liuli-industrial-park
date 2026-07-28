@@ -140,6 +140,12 @@ const BodyRecord: React.FC = () => {
   const [storyPart, setStoryPart] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [shuffledWords] = useState(() => shuffle(BODY_WORDS))
+  // 保存成功后的像素风吹蜡烛庆祝动画
+  const [showCelebrate, setShowCelebrate] = useState(false)
+  const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
+  }, [])
 
   const hostRef = useRef<HTMLDivElement>(null) // Taro View 包裹层
   const svgContainerRef = useRef<HTMLDivElement | null>(null) // 原生 SVG 容器（挂在 document.body 上）
@@ -462,6 +468,10 @@ const BodyRecord: React.FC = () => {
       setStoryText('')
       setStrokes([])
       redrawStrokes([])
+      // 吹蜡烛庆祝动画，约 4.2s 后自动关闭
+      setShowCelebrate(true)
+      if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current)
+      celebrateTimerRef.current = setTimeout(() => setShowCelebrate(false), 4200)
     } catch (err) {
       console.warn('提交失败:', err)
       Taro.showToast({ title: '提交失败', icon: 'none' })
@@ -560,6 +570,22 @@ const BodyRecord: React.FC = () => {
               </View>
             </View>
           </View>
+        </View>
+      )}
+
+      {/* 保存成功：像素风吹蜡烛 + 心愿飞天 */}
+      {showCelebrate && (
+        <View className='br-celebrate' onClick={() => setShowCelebrate(false)}>
+          <Text className='br-wish-star'>⭐</Text>
+          <View className='br-cake'>
+            <View className='br-flame' />
+            <View className='br-smoke' />
+            <View className='br-candle' />
+            <View className='br-cake-top' />
+            <View className='br-cake-base' />
+          </View>
+          <Text className='br-hb-title'>🎂 生日快乐</Text>
+          <Text className='br-hb-sub'>心愿已飞向天空</Text>
         </View>
       )}
     </View>

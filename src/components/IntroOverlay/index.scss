@@ -1,0 +1,62 @@
+/* 页面进入引导浮层（会话内首次显示，文案逐行淡入） */
+.intro-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 32, 46, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 60px 48px;
+  animation: intro-fade 0.6s ease-out;
+}
+
+.intro-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  max-width: 560px;
+}
+
+.intro-line {
+  font-size: 28px;
+  line-height: 1.7;
+  letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.92);
+  text-align: center;
+  opacity: 0;
+  animation: intro-line-in 1.2s ease-out forwards;
+}
+
+.intro-hint {
+  margin-top: 36px;
+  font-size: 20px;
+  letter-spacing: 4px;
+  color: rgba(255, 255, 255, 0.45);
+  opacity: 0;
+  animation: intro-line-in 1.2s ease-out forwards;
+}
+
+// 浮层整体淡入
+@keyframes intro-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+// 文案逐行淡入上浮
+@keyframes intro-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

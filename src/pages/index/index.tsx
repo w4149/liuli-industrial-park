@@ -127,6 +127,10 @@ const Index: React.FC = () => {
           <Text className="tab-icon">🕊️</Text>
           <Text className="tab-label">飞鸽</Text>
         </View>
+<View className="tab-item" onClick={() => Taro.navigateTo({ url: '/pages/bodyProfile/index' })}>
+          <Text className="tab-icon">🧍</Text>
+          <Text className="tab-label">身体</Text>
+        </View>
         <View className="tab-item" onClick={() => Taro.navigateTo({ url: '/pages/shop/index' })}>
           <Text className="tab-icon">🏪</Text>
           <Text className="tab-label">商店</Text>

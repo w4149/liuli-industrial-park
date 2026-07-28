@@ -9,6 +9,7 @@ import marketAudioSrc from '@/assets/audio/danni-song.m4a'
 import chimneyAudioSrc from '@/assets/audio/longze-chimney.mp3'
 import pondAudioSrc from '@/assets/audio/xingyu-pond.m4a'
 import bedroomAudioSrc from '@/assets/audio/fifi-Jasmine1.m4a'
+import IntroOverlay from '@/components/IntroOverlay'
 import './index.scss'
 
 // 校准点名称 → 官方音频路径
@@ -61,6 +62,15 @@ const MAX_DURATION = 60
 
 // 音频触发距离（米），与地图触发圈半径保持一致
 const TRIGGER_DISTANCE = 20
+
+// 本次访问（浏览器会话）内首次进入时的引导文案
+const INTRO_LINES = [
+  '每天，每一天。',
+  '她都会发出声音：',
+  '咔。咔。咔。',
+  '越来越响。',
+  '可是，我从来没有听见。',
+]
 
 const AudioGarden: React.FC = () => {
   const { triggeredAudioPoints, user, currentPosition } = useUserStore()
@@ -503,6 +513,9 @@ const AudioGarden: React.FC = () => {
 
   return (
     <View className='audio-garden'>
+      {/* 首次进入引导（会话内一次） */}
+      <IntroOverlay sessionKey='audio_intro_shown' lines={INTRO_LINES} />
+
       <View className='ag-header'>
         <View className='ag-back' onClick={() => Taro.navigateBack()}>
           <Text>‹</Text>

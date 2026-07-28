@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import Taro from '@tarojs/taro'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { View, Text } from '@tarojs/components'
 import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
@@ -8,7 +8,17 @@ import {
   BodyRecord, BodyStory, ColorWordLink,
 } from '@/types'
 import { BODY_ZONES, BODY_SILHOUETTE, getPartLabel } from '@/config/bodyParts'
+import IntroOverlay from '@/components/IntroOverlay'
 import './index.scss'
+
+// 进入档案页的引导文案
+const INTRO_LINES = [
+  '我每天只吃一个苹果。',
+  '一个苹果，可以吃很久。',
+  '我有时会把它想象成：',
+  '一个生日蛋糕。',
+  '所有我想吃，却不能吃的东西。',
+]
 
 // hex -> {r,g,b}
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
@@ -118,6 +128,22 @@ const BodyProfile: React.FC = () => {
     }
     load()
   }, [userId])
+
+  // 从身体记录页返回后刷新档案数据（跳过首次显示，避免与 load effect 重复请求）
+  const firstShowRef = useRef(true)
+  useDidShow(() => {
+    if (firstShowRef.current) {
+      firstShowRef.current = false
+      return
+    }
+    Promise.all([
+      api.bodyRecord.getAll(userId),
+      api.bodyStory.getAll(userId),
+    ]).then(([recs, strs]) => {
+      setRecords(recs)
+      setStories(strs)
+    })
+  })
 
   // 每个部位的 hex 颜色计数
   const partHexCounts = useMemo(() => {
@@ -270,6 +296,7 @@ const BodyProfile: React.FC = () => {
   if (records.length === 0) {
     return (
       <View className='body-profile-page'>
+        <IntroOverlay sessionKey='bodyprofile_intro_shown' lines={INTRO_LINES} />
         <View className='bp-empty'>
           <Text className='bp-empty-title'>还没有身体记录</Text>
           <Text className='bp-empty-sub'>先去完成一次身体涂色吧</Text>
@@ -286,12 +313,19 @@ const BodyProfile: React.FC = () => {
 
   return (
     <View className='body-profile-page'>
+      <IntroOverlay sessionKey='bodyprofile_intro_shown' lines={INTRO_LINES} />
       <View className='bp-header'>
         <Text className='bp-back' onClick={handleBack}>←</Text>
         <Text className='bp-title'>身体档案</Text>
         <Text className='bp-subtitle'>
           共 {records.length} 次记录 · {stories.length} 个故事
         </Text>
+        <View
+          className='bp-add-btn'
+          onClick={() => Taro.navigateTo({ url: '/pages/bodyRecord/index' })}
+        >
+          <Text>＋ 添加档案</Text>
+        </View>
       </View>
 
       <View className='bp-main'>

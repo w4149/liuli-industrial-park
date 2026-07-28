@@ -5,6 +5,7 @@ import { api } from '@/services/api'
 import { useUserStore } from '@/store/useUserStore'
 import { PigeonLetter } from '@/types'
 import { processStampImage } from '@/utils/imageProcess'
+import IntroOverlay from '@/components/IntroOverlay'
 import './index.scss'
 
 // 默认信鸽颜色（未选图时的占位色）
@@ -12,8 +13,7 @@ const DEFAULT_PIGEON_COLOR = '#667eea'
 
 const TRACK_COUNT = 5
 
-// 本次访问（浏览器会话）内首次进入时的引导文案，逐行淡入
-const INTRO_SESSION_KEY = 'pigeon_intro_shown'
+// 本次访问（浏览器会话）内首次进入时的引导文案
 const INTRO_LINES = [
   '你要靠得足够近，把身体贴上烟囱。',
   '向上看，尽可能把下巴抬高。',
@@ -30,15 +30,6 @@ const Pigeon: React.FC = () => {
   const [letters, setLetters] = useState<PigeonLetter[]>([])
   const [drafts, setDrafts] = useState<PigeonLetter[]>([])
   const [selectedLetter, setSelectedLetter] = useState<PigeonLetter | null>(null)
-
-  // 会话内首次进入才显示引导（sessionStorage 关闭浏览器后自动清空）
-  const [showIntro, setShowIntro] = useState(() => {
-    try { return !sessionStorage.getItem(INTRO_SESSION_KEY) } catch { return false }
-  })
-  useEffect(() => {
-    if (!showIntro) return
-    try { sessionStorage.setItem(INTRO_SESSION_KEY, '1') } catch { /* ignore */ }
-  }, [showIntro])
 
   const [showCompose, setShowCompose] = useState(false)
   const [sender, setSender] = useState('')
@@ -256,28 +247,8 @@ const Pigeon: React.FC = () => {
         <Text>✉️ 写信</Text>
       </View>
 
-      {/* 首次进入引导：文案逐行淡入，点击任意处关闭 */}
-      {showIntro && (
-        <View className='pg-intro-mask' onClick={() => setShowIntro(false)}>
-          <View className='pg-intro'>
-            {INTRO_LINES.map((line, i) => (
-              <Text
-                key={line}
-                className='pg-intro-line'
-                style={{ animationDelay: `${0.4 + i * 0.8}s` }}
-              >
-                {line}
-              </Text>
-            ))}
-            <Text
-              className='pg-intro-hint'
-              style={{ animationDelay: `${0.4 + INTRO_LINES.length * 0.8}s` }}
-            >
-              轻触任意处继续
-            </Text>
-          </View>
-        </View>
-      )}
+      {/* 首次进入引导（会话内一次） */}
+      <IntroOverlay sessionKey='pigeon_intro_shown' lines={INTRO_LINES} />
 
       {/* 隐藏的邮票拍照输入 */}
       <input
