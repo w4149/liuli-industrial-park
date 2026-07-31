@@ -13,7 +13,8 @@ import './index.scss'
 
 const SYNC_INTERVAL = 30 * 1000 // 位置每 30 秒同步一次
 const DUEL_POLL_INTERVAL = 10 * 1000 // 对决事件每 10 秒轮询一次
-const DUEL_WINDOW = 10 * 60 * 1000 // 10 分钟内必须被喜欢的脊兽续命
+const DUEL_WINDOW = 20 * 60 * 1000 // 续命重置窗口：20 分钟内必须被喜欢的脊兽续命
+const INITIAL_WINDOW = 20 * 60 * 1000 // 入局/重置后重新入局的初始窗口 20 分钟
 const PROBE_WARN_WINDOW = 60 * 1000 // 被探查后 1 分钟伪装窗口
 const PROBE_REVEAL_DURATION = 5 * 60 * 1000 // 探查现形持续 5 分钟
 const TASK_WRONG_PENALTY_MS = 10 * 1000 // 答错任务扣除对决时间 10 秒
@@ -171,7 +172,7 @@ const HideSeek: React.FC = () => {
   const [identity, setIdentity] = useState('')
   const [nickname, setNickname] = useState('')
   const [gameOver, setGameOver] = useState('') // '' | 'attack' | 'timeout'
-  const [duelLeftMs, setDuelLeftMs] = useState(DUEL_WINDOW)
+  const [duelLeftMs, setDuelLeftMs] = useState(INITIAL_WINDOW)
   const [probePhase, setProbePhase] = useState<'none' | 'warn' | 'reveal'>('none')
   const [probeLeftMs, setProbeLeftMs] = useState(0)
   const [othersOnline, setOthersOnline] = useState<HideSeekPresence[]>([])
@@ -561,9 +562,9 @@ const HideSeek: React.FC = () => {
   const startGameLoops = () => {
     // 预热云端咒语缓存（异步，失败保留本地缓存）
     refreshCustomSpellsFromCloud()
-    // 首次进入：初始化 10 分钟窗口和对决事件游标
+    // 首次进入：初始化 20 分钟初始窗口和对决事件游标
     if (!deadlineRef.current) {
-      saveDeadline(Date.now() + DUEL_WINDOW)
+      saveDeadline(Date.now() + INITIAL_WINDOW)
     }
     if (!duelSinceRef.current) {
       saveDuelSince(new Date().toISOString())
@@ -620,7 +621,7 @@ const HideSeek: React.FC = () => {
       Taro.setStorageSync(NICKNAME_STORAGE, nick)
       Taro.setStorageSync(GAMEOVER_STORAGE, '')
     } catch { /* ignore */ }
-    saveDeadline(Date.now() + DUEL_WINDOW)
+    saveDeadline(Date.now() + INITIAL_WINDOW)
     saveDuelSince(new Date().toISOString())
     saveProbeSince(new Date().toISOString())
     saveProbe(null)
