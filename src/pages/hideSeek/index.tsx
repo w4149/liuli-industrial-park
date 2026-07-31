@@ -1271,8 +1271,8 @@ const HideSeek: React.FC = () => {
               <View className="hs-relations-mine">
                 <View className="hs-relation-item">
                   <Text className="hs-relation-name">我的真身：<BeastIcon beast={myBeast} /> {myBeast || '未入局'}</Text>
-                  <Text className="hs-relation-likes">😍 喜欢我的：{likedByMine.join('、') || '—'}</Text>
-                  <Text className="hs-relation-dislikes">😡 不喜欢我的：{dislikedByMine.join('、') || '—'}</Text>
+                  <Text className="hs-relation-likes">😍 喜欢我的（让ta们在对决中输入我的身份咒语为我续命）：{likedByMine.join('、') || '—'}</Text>
+                  <Text className="hs-relation-dislikes">😡 不喜欢我的（别让ta们在对决中输入我的身份咒语）：{dislikedByMine.join('、') || '—'}</Text>
                 </View>
               </View>
             ) : (
