@@ -222,6 +222,50 @@
   padding: 6px 12px;
 }
 
+.task-field-label {
+  display: block;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.task-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .task-answer-input {
+    flex: 1;
+    margin-bottom: 8px;
+  }
+}
+
+.task-answer-del {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  border: none;
+  border-radius: 8px;
+  background: #ffe0e0;
+  color: #dc3545;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.task-add-answer-btn {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+  background: #f0f0f5;
+  color: #667eea;
+  border: 1px dashed #b8b8d8;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .points-list {
   max-height: 200px;
   overflow-y: auto;

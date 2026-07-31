@@ -2,7 +2,7 @@ import { supabase } from '@/utils/supabase'
 import {
   User, POI, InspirationMessage, Badge, ShopItem, AudioMarker, PigeonLetter,
   ColorWordLink, BodyRecord, BodyStory, BodyColor, RidgeBeastPersonality, HideSeekPresence, HideSeekDuel,
-  HideSeekSpell,
+  HideSeekSpell, HideSeekTask,
 } from '@/types'
 import { mockPOIs } from '@/data/mockPois'
 
@@ -774,6 +774,74 @@ export const api = {
         return true
       } catch (error) {
         console.warn('Delete hide-seek spell failed:', error)
+        return false
+      }
+    },
+  },
+
+  // ===== 躲猫猫任务/提问系统 =====
+  task: {
+    // 拉取全部任务（按创建时间倒序，最新在前）
+    async getAll(): Promise<HideSeekTask[]> {
+      if (!useSupabase) return []
+      try {
+        const { data } = await supabase.from('hide_seek_tasks').select()
+        const list = (data || []) as HideSeekTask[]
+        return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      } catch (error) {
+        console.warn('Get hide-seek tasks failed:', error)
+        return []
+      }
+    },
+
+    // 发布一个任务，返回落库后的完整行（失败返回 null）
+    async create(task: Omit<HideSeekTask, 'id' | 'created_at' | 'completed_by_key' | 'completed_by_name' | 'completed_at'>): Promise<HideSeekTask | null> {
+      if (!useSupabase) return null
+      const payload = {
+        ...task,
+        completed_by_key: '',
+        completed_by_name: '',
+        completed_at: null,
+        created_at: new Date().toISOString(),
+      }
+      try {
+        const { data } = await supabase.from('hide_seek_tasks').insert([payload])
+        return data && data.length > 0 ? (data[0] as HideSeekTask) : null
+      } catch (error) {
+        console.warn('Create hide-seek task failed:', error)
+        return null
+      }
+    },
+
+    // 答对后独占领取奖励：先复查该任务是否仍无人完成，是则写入完成者。
+    // 返回 'won'（本次抢到）| 'taken'（已被他人抢先）| 'error'（网络异常）
+    async complete(id: string, userKey: string, userName: string): Promise<'won' | 'taken' | 'error'> {
+      if (!useSupabase) return 'error'
+      try {
+        const { data: rows } = await supabase.from('hide_seek_tasks').eq('id', id)
+        const current = rows && rows.length > 0 ? (rows[0] as HideSeekTask) : null
+        if (!current) return 'error'
+        if (current.completed_by_key) return 'taken'
+        const { data } = await supabase.from('hide_seek_tasks').update(
+          { completed_by_key: userKey, completed_by_name: userName, completed_at: new Date().toISOString() },
+          'id',
+          id
+        )
+        return data && data.length > 0 ? 'won' : 'error'
+      } catch (error) {
+        console.warn('Complete hide-seek task failed:', error)
+        return 'error'
+      }
+    },
+
+    // 删除一个任务
+    async delete(id: string): Promise<boolean> {
+      if (!useSupabase) return false
+      try {
+        await supabase.from('hide_seek_tasks').delete('id', id)
+        return true
+      } catch (error) {
+        console.warn('Delete hide-seek task failed:', error)
         return false
       }
     },

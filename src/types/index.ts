@@ -126,6 +126,20 @@ export interface HideSeekSpell {
   created_at: string;
 }
 
+// 躲猫猫任务/提问（开发者模式发布，躲猫猫玩家答题）
+export interface HideSeekTask {
+  id: string;
+  name: string; // 任务名
+  description: string; // 任务描述
+  answers: string[]; // 标准答案，任一命中即算答对（"或"逻辑）
+  reward_spell: string; // 奖励咒语（名称/文本），答对后弹窗揭晓
+  reward_usage: string; // 咒语功能用法，答对后弹窗揭晓
+  completed_by_key: string; // 完成者 user_key，空串=尚无人完成
+  completed_by_name: string; // 完成者昵称
+  completed_at: string | null; // 完成时间
+  created_at: string;
+}
+
 export interface UserLocation {
   lat: number;
   lng: number;

@@ -5,7 +5,7 @@ import AMapLoader from '@amap/amap-jsapi-loader'
 import { BEAST_PROFILES, IMMORTAL_INFO } from '@/data/ridgeBeasts'
 import { ALL_BEASTS, BEAST_LIKES, beastLikes, beastLikedBy, beastDislikedBy, beastDislikes } from '@/data/beastRelations'
 import { getCustomSpells, refreshCustomSpellsFromCloud } from '@/data/customSpells'
-import { HideSeekPresence, HideSeekDuel } from '@/types'
+import { HideSeekPresence, HideSeekDuel, HideSeekTask } from '@/types'
 import { api } from '@/services/api'
 import { wgs84ToGcj02 } from '@/utils'
 import { mapConfig } from '@/config/map'
@@ -16,6 +16,7 @@ const DUEL_POLL_INTERVAL = 10 * 1000 // 对决事件每 10 秒轮询一次
 const DUEL_WINDOW = 10 * 60 * 1000 // 10 分钟内必须被喜欢的脊兽续命
 const PROBE_WARN_WINDOW = 60 * 1000 // 被探查后 1 分钟伪装窗口
 const PROBE_REVEAL_DURATION = 5 * 60 * 1000 // 探查现形持续 5 分钟
+const TASK_WRONG_PENALTY_MS = 10 * 1000 // 答错任务扣除对决时间 10 秒
 
 const USER_KEY_STORAGE = 'hide_seek_user_key'
 const IDENTITY_STORAGE = 'hide_seek_identity'
@@ -176,13 +177,21 @@ const HideSeek: React.FC = () => {
   const [othersOnline, setOthersOnline] = useState<HideSeekPresence[]>([])
   const [relationsView, setRelationsView] = useState<'mine' | 'all'>('mine')
   const [feed, setFeed] = useState<{ id: string; time: string; text: string }[]>([])
-  const [activeModal, setActiveModal] = useState('') // '' | 'relations' | 'spell' | 'duel' | 'identity' | 'probeAlert' | 'probeTarget' | 'feed'
+  const [activeModal, setActiveModal] = useState('') // '' | 'relations' | 'spell' | 'duel' | 'identity' | 'probeAlert' | 'probeTarget' | 'feed' | 'taskList' | 'taskDetail'
   const [gateInput, setGateInput] = useState('')
   const [gateNickInput, setGateNickInput] = useState('')
   const [spellInput, setSpellInput] = useState('')
   const [duelInput, setDuelInput] = useState('')
   const [probeSpellInput, setProbeSpellInput] = useState('')
   const [reviveInput, setReviveInput] = useState('')
+  // 任务系统
+  const [tasks, setTasks] = useState<HideSeekTask[]>([])
+  const [selectedTask, setSelectedTask] = useState<HideSeekTask | null>(null)
+  const [taskAnswerInput, setTaskAnswerInput] = useState('')
+  const [taskSubmitting, setTaskSubmitting] = useState(false)
+  const [taskLoading, setTaskLoading] = useState(false)
+  // 答对后揭晓的奖励咒语（仅展示一次，关闭即清空，不持久化）
+  const [rewardReveal, setRewardReveal] = useState<{ spell: string; usage: string } | null>(null)
 
   // ===== 身份与脊兽 =====
 
@@ -814,6 +823,76 @@ const HideSeek: React.FC = () => {
     Taro.showToast({ title: '已刷新', icon: 'none', duration: 800 })
   }
 
+  // ===== 任务系统 =====
+
+  const loadTasks = async () => {
+    const list = await api.task.getAll()
+    setTasks(list)
+    return list
+  }
+
+  const openTaskList = () => {
+    setActiveModal('taskList')
+    setTaskLoading(true)
+    loadTasks().finally(() => setTaskLoading(false))
+  }
+
+  const openTaskDetail = (task: HideSeekTask) => {
+    setSelectedTask(task)
+    setTaskAnswerInput('')
+    setActiveModal('taskDetail')
+  }
+
+  const handleSubmitAnswer = async () => {
+    const task = selectedTask
+    if (!task || taskSubmitting) return
+    if (task.completed_by_key) {
+      Taro.showToast({ title: '该任务奖励已被获得', icon: 'none', duration: 2000 })
+      return
+    }
+    const input = taskAnswerInput.trim()
+    if (!input) {
+      Taro.showToast({ title: '请输入答案', icon: 'none' })
+      return
+    }
+    // 标准答案支持"或"逻辑：任一命中即算答对（忽略大小写与首尾空格）
+    const normalized = input.toLowerCase()
+    const correct = (task.answers || []).some((a) => a.trim().toLowerCase() === normalized)
+    if (!correct) {
+      // 答错扣时 10 秒（仅在场且未出局时扣，扣完可能直接超时出局）
+      if (identityRef.current && !gameOverRef.current && deadlineRef.current) {
+        saveDeadline(deadlineRef.current - TASK_WRONG_PENALTY_MS)
+      }
+      setTaskAnswerInput('')
+      Taro.showToast({ title: '❌ 答错了，扣除 10 秒对决时间', icon: 'none', duration: 2500 })
+      return
+    }
+    // 答对：向服务端申请独占领取奖励（全场第一个答对者独得）
+    setTaskSubmitting(true)
+    const winnerName = nicknameRef.current || '神秘访客'
+    const result = await api.task.complete(task.id, userKeyRef.current, winnerName)
+    setTaskSubmitting(false)
+    if (result === 'won') {
+      const updated: HideSeekTask = { ...task, completed_by_key: userKeyRef.current, completed_by_name: winnerName }
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)))
+      setSelectedTask(updated)
+      setTaskAnswerInput('')
+      setActiveModal('')
+      // 揭晓奖励咒语（仅此一次，关闭弹窗后不再出现）
+      setRewardReveal({ spell: task.reward_spell, usage: task.reward_usage })
+    } else if (result === 'taken') {
+      Taro.showToast({ title: '答对了，但奖励已被人抢先获得', icon: 'none', duration: 2500 })
+      const list = await loadTasks()
+      const fresh = list.find((t) => t.id === task.id)
+      if (fresh) setSelectedTask(fresh)
+    } else {
+      Taro.showToast({ title: '网络异常，请稍后重试', icon: 'none', duration: 2000 })
+    }
+  }
+
+  const closeReward = () => setRewardReveal(null)
+
+
   // ===== 生命周期 =====
 
   useEffect(() => {
@@ -1091,6 +1170,9 @@ const HideSeek: React.FC = () => {
         <View className="hs-action-btn" onClick={() => setActiveModal('identity')}>
           <Text>🔑 身份咒语</Text>
         </View>
+        <View className="hs-action-btn" onClick={openTaskList}>
+          <Text>📋 任务</Text>
+        </View>
         <View className="hs-action-btn primary" onClick={() => setActiveModal('duel')}>
           <Text>⚔️ 对决</Text>
         </View>
@@ -1308,6 +1390,85 @@ const HideSeek: React.FC = () => {
             <View className="hs-modal-actions">
               <View className="hs-modal-btn ghost" onClick={() => setActiveModal('')}><Text>听天由命</Text></View>
               <View className="hs-modal-btn primary" onClick={handleProbeDisguise}><Text>伪装</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 任务列表 */}
+      {activeModal === 'taskList' && (
+        <View className="hs-overlay" onClick={() => setActiveModal('')}>
+          <View className="hs-modal" onClick={(e) => e.stopPropagation()}>
+            <Text className="hs-modal-title">📋 任务</Text>
+            <Text className="hs-modal-desc">答对可独得奖励咒语，全场仅第一个答对者能获得；答错会扣除 10 秒对决时间</Text>
+            {tasks.length === 0 ? (
+              <Text className="hs-task-empty">{taskLoading ? '任务加载中…' : '暂时还没有任务，敬请期待…'}</Text>
+            ) : (
+              <View className="hs-task-list">
+                {tasks.map((t) => (
+                  <View key={t.id} className="hs-task-item" onClick={() => openTaskDetail(t)}>
+                    <View className="hs-task-item-main">
+                      <Text className="hs-task-name">{t.name}</Text>
+                      <Text className="hs-task-reward">🎁 神秘咒语</Text>
+                    </View>
+                    <Text className={`hs-task-status ${t.completed_by_key ? 'done' : ''}`}>
+                      {t.completed_by_key ? '奖励已被获得' : '尚无人完成'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn primary" onClick={() => setActiveModal('')}><Text>关闭</Text></View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 任务详情 + 答题 */}
+      {activeModal === 'taskDetail' && selectedTask && (
+        <View className="hs-overlay" onClick={() => setActiveModal('taskList')}>
+          <View className="hs-modal" onClick={(e) => e.stopPropagation()}>
+            <Text className="hs-modal-title">{selectedTask.name}</Text>
+            <Text className="hs-modal-desc">{selectedTask.description || '（暂无任务描述）'}</Text>
+            {selectedTask.completed_by_key && (
+              <View>
+                <Text className="hs-task-done-tip">🎉 该任务奖励已被「{selectedTask.completed_by_name || '神秘访客'}」获得</Text>
+                <View className="hs-modal-actions">
+                  <View className="hs-modal-btn primary" onClick={() => setActiveModal('taskList')}><Text>返回列表</Text></View>
+                </View>
+              </View>
+            )}
+            {!selectedTask.completed_by_key && (
+              <View>
+                <Input
+                  className="hs-modal-input"
+                  value={taskAnswerInput}
+                  placeholder="输入你的答案…"
+                  onInput={(e) => setTaskAnswerInput(e.detail.value)}
+                />
+                <Text className="hs-task-penalty-tip">⚠️ 提交答案有代价：答错将扣除 10 秒对决时间</Text>
+                <View className="hs-modal-actions">
+                  <View className="hs-modal-btn ghost" onClick={() => setActiveModal('taskList')}><Text>返回</Text></View>
+                  <View className="hs-modal-btn primary" onClick={handleSubmitAnswer}><Text>{taskSubmitting ? '提交中…' : '提交答案'}</Text></View>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* 答对后揭晓奖励咒语（仅此一次，关闭后不再出现） */}
+      {rewardReveal && (
+        <View className="hs-overlay">
+          <View className="hs-modal" onClick={(e) => e.stopPropagation()}>
+            <Text className="hs-modal-title">🎉 恭喜获得奖励咒语！</Text>
+            <Text className="hs-spell-reveal">{rewardReveal.spell}</Text>
+            <Text className="hs-modal-desc">
+              功能用法：{rewardReveal.usage || '（未填写）'}{'\n'}请务必记住它——关闭本弹窗后，这个咒语将不再出现！
+            </Text>
+            <View className="hs-modal-actions">
+              <View className="hs-modal-btn primary" onClick={closeReward}><Text>我记住了</Text></View>
             </View>
           </View>
         </View>

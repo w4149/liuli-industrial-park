@@ -5,6 +5,7 @@ import { supabaseClient } from '@/utils/supabase/client'
 import { ALL_BEASTS } from '@/data/beastRelations'
 import { CustomSpell, getCustomSpells, saveCustomSpells, refreshCustomSpellsFromCloud } from '@/data/customSpells'
 import { api } from '@/services/api'
+import { HideSeekTask } from '@/types'
 import './index.scss'
 
 interface CalibrationPoint {
@@ -56,6 +57,14 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
   const [newSpellBeast, setNewSpellBeast] = useState('')
   const [newSpellMinutes, setNewSpellMinutes] = useState('')
   const [spellStatus, setSpellStatus] = useState('')
+  // 任务/提问系统
+  const [tasks, setTasks] = useState<HideSeekTask[]>([])
+  const [newTaskName, setNewTaskName] = useState('')
+  const [newTaskDesc, setNewTaskDesc] = useState('')
+  const [newTaskAnswers, setNewTaskAnswers] = useState<string[]>([''])
+  const [newTaskReward, setNewTaskReward] = useState('')
+  const [newTaskUsage, setNewTaskUsage] = useState('')
+  const [taskStatus, setTaskStatus] = useState('')
   const geolocationRef = useRef<any>(null)
   const citySearchRef = useRef<any>(null)
 
@@ -64,6 +73,8 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     initGeolocation()
     // 咒语存云端（hide_seek_spells 表），进页拉取最新列表
     refreshCustomSpellsFromCloud().then(setCustomSpells)
+    // 任务列表拉取
+    api.task.getAll().then(setTasks)
   }, [])
 
   const loadCalibrationPoints = async () => {
@@ -573,6 +584,69 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
     saveCustomSpells(updated)
   }
 
+  const flashTaskStatus = (msg: string) => {
+    setTaskStatus(msg)
+    setTimeout(() => setTaskStatus(''), 3000)
+  }
+
+  // 标准答案支持"或"逻辑：多个答案输入框，任一命中即算答对
+  const handleAnswerChange = (index: number, value: string) => {
+    setNewTaskAnswers((prev) => prev.map((a, i) => (i === index ? value : a)))
+  }
+  const handleAddAnswerField = () => {
+    setNewTaskAnswers((prev) => [...prev, ''])
+  }
+  const handleRemoveAnswerField = (index: number) => {
+    setNewTaskAnswers((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }
+
+  const handleAddTask = async () => {
+    const name = newTaskName.trim()
+    const description = newTaskDesc.trim()
+    const answers = newTaskAnswers.map((a) => a.trim()).filter(Boolean)
+    const reward = newTaskReward.trim()
+    const usage = newTaskUsage.trim()
+    if (!name) {
+      flashTaskStatus('请输入任务名')
+      return
+    }
+    if (!answers.length) {
+      flashTaskStatus('请至少填写一个标准答案')
+      return
+    }
+    if (!reward) {
+      flashTaskStatus('请输入奖励咒语')
+      return
+    }
+    const row = await api.task.create({
+      name,
+      description,
+      answers,
+      reward_spell: reward,
+      reward_usage: usage,
+    })
+    if (!row) {
+      flashTaskStatus('❌ 保存到数据库失败，请检查网络后重试')
+      return
+    }
+    setTasks((prev) => [row, ...prev])
+    setNewTaskName('')
+    setNewTaskDesc('')
+    setNewTaskAnswers([''])
+    setNewTaskReward('')
+    setNewTaskUsage('')
+    flashTaskStatus('✅ 任务已发布（全体躲猫猫玩家可见）')
+  }
+
+  const handleDeleteTask = async (id: string) => {
+    const ok = await api.task.delete(id)
+    if (!ok) {
+      flashTaskStatus('❌ 删除失败，请检查网络后重试')
+      return
+    }
+    setTasks((prev) => prev.filter((t) => t.id !== id))
+  }
+
   if (!isAuthenticated) {
     return (
       <View className="dev-mode-container">
@@ -764,6 +838,82 @@ const DeveloperMode: React.FC<DeveloperModeProps> = ({ onClose }) => {
                   <button
                     className="delete-btn"
                     onClick={() => handleDeleteSpell(s.id)}
+                  >
+                    删除
+                  </button>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View className="section">
+          <Text className="section-title">🎯 任务发布</Text>
+          <Input
+            className="name-input"
+            placeholder="任务名（如：寻找隐藏的琉璃兽）"
+            value={newTaskName}
+            onInput={(e: any) => setNewTaskName(e.detail.value)}
+          />
+          <Input
+            className="name-input"
+            placeholder="任务描述（提示、线索、答题要求…）"
+            value={newTaskDesc}
+            onInput={(e: any) => setNewTaskDesc(e.detail.value)}
+          />
+
+          <Text className="task-field-label">标准答案（任一命中即算答对）</Text>
+          {newTaskAnswers.map((ans, i) => (
+            <View key={i} className="task-answer-row">
+              <Input
+                className="name-input task-answer-input"
+                placeholder={`答案 ${i + 1}`}
+                value={ans}
+                onInput={(e: any) => handleAnswerChange(i, e.detail.value)}
+              />
+              {newTaskAnswers.length > 1 && (
+                <button className="task-answer-del" onClick={() => handleRemoveAnswerField(i)}>×</button>
+              )}
+            </View>
+          ))}
+          <button className="task-add-answer-btn" onClick={handleAddAnswerField}>＋ 添加「或」答案</button>
+
+          <Input
+            className="name-input"
+            placeholder="奖励咒语（如：日月同辉）"
+            value={newTaskReward}
+            onInput={(e: any) => setNewTaskReward(e.detail.value)}
+          />
+          <Input
+            className="name-input"
+            placeholder="咒语功能用法（答对后揭晓给玩家）"
+            value={newTaskUsage}
+            onInput={(e: any) => setNewTaskUsage(e.detail.value)}
+          />
+
+          {taskStatus && (
+            <Text className="upload-status">{taskStatus}</Text>
+          )}
+
+          <button className="upload-btn" onClick={handleAddTask}>
+            ➕ 发布任务
+          </button>
+
+          {tasks.length === 0 ? (
+            <Text className="empty-text">暂无任务</Text>
+          ) : (
+            <View className="points-list">
+              {tasks.map((t) => (
+                <View key={t.id} className="point-item">
+                  <View className="point-info">
+                    <Text className="point-name">{t.name} · 🎁 {t.reward_spell}</Text>
+                    <Text className="point-coords">
+                      答案：{(t.answers || []).join(' / ')} · {t.completed_by_key ? `已被「${t.completed_by_name || '匿名'}」获得` : '尚无人完成'}
+                    </Text>
+                  </View>
+                  <button
+                    className="delete-btn"
+                    onClick={() => handleDeleteTask(t.id)}
                   >
                     删除
                   </button>
